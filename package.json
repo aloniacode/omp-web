@@ -34,10 +34,5 @@
     "vite": "^7.1.0",
     "vitest": "^4.1.11",
     "ws": "^8.18.3"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   }
 }
