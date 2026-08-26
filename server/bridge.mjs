@@ -20,6 +20,8 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { WebSocketServer } from "ws";
+import { parseSessionPrefix, bucketNamesForCwd } from "./session-meta.mjs";
+import { FrameAssembler } from "./rpc-frame.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXTRA_OMP_ARGS = process.env.OMP_ARGS ? process.env.OMP_ARGS.split(" ").filter(Boolean) : [];
@@ -36,80 +38,87 @@ const MAX_LINE_BYTES = 128 * 1024 * 1024;
 
 const SESSIONS_DIR = path.join(os.homedir(), ".omp", "agent", "sessions");
 
-function sanitizeText(text) {
-  return text
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+/** Bounded workspace file search for the composer's @-mention popup. */
+const SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "out",
+  ".next",
+  ".nuxt",
+  "coverage",
+  "target",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".idea",
+  ".vscode",
+]);
 
-function userTextFromContent(content) {
-  if (typeof content === "string") return sanitizeText(content);
-  if (Array.isArray(content)) {
-    for (const block of content) {
-      if (block && block.type === "text" && typeof block.text === "string" && block.text.trim()) {
-        return sanitizeText(block.text);
+async function searchFiles(query, limit = 24) {
+  const results = [];
+  const needle = query.toLowerCase();
+  async function walk(dir, rel, depth) {
+    if (depth > 4 || results.length >= limit) return;
+    let entries;
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (results.length >= limit) return;
+      if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
+      const relPath = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        await walk(path.join(dir, entry.name), relPath, depth + 1);
+      } else if (!needle || relPath.toLowerCase().includes(needle)) {
+        results.push(relPath);
       }
     }
   }
-  return "";
+  await walk(OMP_CWD, "", 0);
+  return results;
 }
 
-/**
- * Parse a session JSONL prefix (4 KiB is enough: fixed-width title slot +
- * header + earliest entries). Returns lightweight metadata or null.
- */
-function parseSessionPrefix(filePath, buf, stat) {
-  const text = buf.toString("utf8");
-  const lines = text.split("\n");
-  if (lines.length > 1) lines.pop(); // drop trailing partial line
-
-  let header = null;
-  let slotTitle = null;
-  let preview = "";
-
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    let entry;
+/** Skills from the global agent dir plus the project's .omp/skills. */
+async function listSkills() {
+  const roots = [
+    { dir: path.join(os.homedir(), ".omp", "agent", "skills"), source: "global" },
+    { dir: path.join(OMP_CWD, ".omp", "skills"), source: "project" },
+  ];
+  const out = [];
+  for (const { dir, source } of roots) {
+    let entries;
     try {
-      entry = JSON.parse(line);
+      entries = await fsp.readdir(dir, { withFileTypes: true });
     } catch {
       continue;
     }
-    if (!entry || typeof entry !== "object") continue;
-
-    if (entry.type === "title") {
-      if (typeof entry.title === "string" && entry.title.trim()) slotTitle = entry.title.trim();
-      continue;
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const meta = { name: entry.name, description: "", source };
+      try {
+        const raw = await fsp.readFile(path.join(dir, entry.name, "SKILL.md"), "utf8");
+        const frontmatter = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+        if (frontmatter) {
+          const name = frontmatter[1].match(/^name:\s*(.+)$/m);
+          const description = frontmatter[1].match(/^description:\s*(.+)$/m);
+          if (name) meta.name = name[1].trim();
+          if (description) meta.description = description[1].trim().slice(0, 120);
+        }
+      } catch {
+        // SKILL.md missing — keep directory name
+      }
+      out.push(meta);
     }
-    if (entry.type === "session" && !header) {
-      header = {
-        id: typeof entry.id === "string" ? entry.id : path.basename(filePath, ".jsonl"),
-        timestamp: entry.timestamp ?? null,
-        cwd: typeof entry.cwd === "string" ? entry.cwd : null,
-        title: typeof entry.title === "string" ? entry.title.trim() : "",
-        titleSource: entry.titleSource ?? null,
-      };
-    }
-    if (!preview && entry.type === "message" && entry.message?.role === "user") {
-      const text0 = userTextFromContent(entry.message.content);
-      if (text0) preview = text0.slice(0, 140);
-    }
-    if (header && preview) break;
   }
+  return out;
+}
 
-  const title = slotTitle ?? header?.title ?? "";
-  return {
-    path: filePath,
-    id: header?.id ?? path.basename(filePath, ".jsonl"),
-    cwd: header?.cwd ?? null,
-    title: title || preview || null,
-    titleIsAuto: !(slotTitle || (header?.title && header.titleSource === "user")) && Boolean(title),
-    preview,
-    mtimeMs: stat.mtimeMs,
-    size: stat.size,
-    startedAt: header?.timestamp ?? null,
-  };
+function isBucketForCwd(bucketName) {
+  return bucketNamesForCwd(OMP_CWD).has(bucketName);
 }
 
 async function listSessions({ limit = 50, scope = "all" } = {}) {
@@ -167,26 +176,6 @@ async function listSessions({ limit = 50, scope = "all" } = {}) {
   return out;
 }
 
-/**
- * Encoded-cwd bucket names per docs/session.md: `--<encoded-absolute>--` where
- * every `\`, `/` and `:` becomes `-`, or `-<relative>` for directories under
- * the home directory.
- */
-function bucketNamesForCwd(cwd) {
-  const names = new Set();
-  const absolute = "--" + [...cwd].map((c) => (/[\\/:]/.test(c) ? "-" : c)).join("") + "--";
-  names.add(absolute);
-  const rel = path.relative(os.homedir(), cwd);
-  if (rel && !rel.startsWith("..")) {
-    const homeRel = "-" + [...rel].map((c) => (/[\\/:]/.test(c) ? "-" : c)).join("");
-    names.add(homeRel);
-  }
-  return names;
-}
-
-function isBucketForCwd(bucketName) {
-  return bucketNamesForCwd(OMP_CWD).has(bucketName);
-}
 async function deleteSessionFile(requestedPath) {
   const resolved = path.resolve(requestedPath);
   const resolvedRoot = path.resolve(SESSIONS_DIR);
@@ -424,6 +413,14 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         omp: { bin: OMP_BIN, resolved: found, cwd: OMP_CWD },
       });
+    }
+    if (url.pathname === "/api/files" && req.method === "GET") {
+      const query = url.searchParams.get("q") ?? "";
+      const limit = Math.min(Number(url.searchParams.get("limit") ?? 24) || 24, 50);
+      return sendJson(res, 200, { files: await searchFiles(query, limit) });
+    }
+    if (url.pathname === "/api/skills" && req.method === "GET") {
+      return sendJson(res, 200, { skills: await listSkills() });
     }
     if (url.pathname === "/api/sessions" && req.method === "GET") {
       const limit = Math.min(Number(url.searchParams.get("limit") ?? 60) || 60, 200);

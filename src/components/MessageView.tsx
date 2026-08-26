@@ -1,8 +1,5 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
 import type {
   AssistantMessage,
   ImageContent,
@@ -12,6 +9,8 @@ import type {
   ToolResultMessage,
 } from "../rpc/types";
 import { fmtCost, fmtTokPerSec, fmtTokens, truncate, userText } from "../lib/format";
+import { useI18n } from "../i18n";
+import { Markdown } from "./Markdown";
 import { useStore } from "../state/store";
 import {
   IconBot,
@@ -20,18 +19,6 @@ import {
   IconChevronDown,
   IconChevronRight,
 } from "./icons";
-
-// ── Markdown ────────────────────────────────────────────────────────────────
-
-export function Markdown({ text }: { text: string }) {
-  return (
-    <div className="md">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-        {text}
-      </ReactMarkdown>
-    </div>
-  );
-}
 
 // ── Collapsible shell ───────────────────────────────────────────────────────
 
@@ -125,6 +112,7 @@ function ToolCard({ tool }: { tool: ToolView }) {
 // ── Thinking block ──────────────────────────────────────────────────────────
 
 function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }) {
+  const { t } = useI18n();
   return (
     <Collapsible
       tone="dim"
@@ -133,7 +121,7 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }
         <span className="flex items-center gap-2">
           <IconBrain size={13} className="text-accent/70" />
           <span className="text-zinc-500 dark:text-zinc-400">
-            {streaming ? "Thinking…" : "Thought process"}
+            {streaming ? t("message.thinking") : t("message.thoughtProcess")}
           </span>
         </span>
       }
@@ -146,17 +134,18 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }
 // ── Usage chips ─────────────────────────────────────────────────────────────
 
 function UsageChips({ message }: { message: AssistantMessage }) {
+  const { t } = useI18n();
   if (!message.usage) return null;
   const usage = message.usage;
   const tps = fmtTokPerSec(usage.output, message.duration);
   const modelLabel = message.model ?? null;
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] tabular-nums text-zinc-400 dark:text-zinc-500">
-      <span title={`${usage.input} input · ${usage.output} output`}>
+      <span title={t("message.usageTooltip", { input: usage.input, output: usage.output })}>
         ↑ {fmtTokens(usage.input)} ↓ {fmtTokens(usage.output)}
       </span>
       {(usage.cacheRead > 0 || usage.cacheWrite > 0) && (
-        <span title={`${usage.cacheRead} cache read · ${usage.cacheWrite} cache write`}>
+        <span title={t("message.cacheTooltip", { read: usage.cacheRead, write: usage.cacheWrite })}>
           cache {fmtTokens(usage.cacheRead)} / {fmtTokens(usage.cacheWrite)}
         </span>
       )}
@@ -164,8 +153,8 @@ function UsageChips({ message }: { message: AssistantMessage }) {
       <span title={`cost ${fmtCost(usage.cost.total)}`}>{fmtCost(usage.cost.total)}</span>
       {tps && <span>{tps}</span>}
       {modelLabel && <span className="truncate opacity-75">{modelLabel}</span>}
-      {message.stopReason === "aborted" && <span className="text-amber-500">aborted</span>}
-      {message.stopReason === "error" && <span className="text-red-500">error</span>}
+      {message.stopReason === "aborted" && <span className="text-amber-500">{t("message.aborted")}</span>}
+      {message.stopReason === "error" && <span className="text-red-500">{t("message.error")}</span>}
     </div>
   );
 }
@@ -180,6 +169,7 @@ export interface ChatEntryUser {
 }
 
 export function UserRow({ entry }: { entry: ChatEntryUser }) {
+  const { t } = useI18n();
   return (
     <div className="flex justify-end">
       <div
@@ -189,10 +179,10 @@ export function UserRow({ entry }: { entry: ChatEntryUser }) {
       >
         <p className="whitespace-pre-wrap break-words text-[14.5px] leading-relaxed">{userText(entry.content)}</p>
         {entry.pending && (
-          <p className="mt-1 text-right text-[10.5px] uppercase tracking-wide text-white/70">sending…</p>
+          <p className="mt-1 text-right text-[10.5px] uppercase tracking-wide text-white/70">{t("message.sending")}</p>
         )}
         {entry.failed && (
-          <p className="mt-1 text-right text-[10.5px] uppercase tracking-wide text-red-200">failed</p>
+          <p className="mt-1 text-right text-[10.5px] uppercase tracking-wide text-red-200">{t("message.failed")}</p>
         )}
       </div>
     </div>
@@ -242,6 +232,7 @@ export function MessageView({
   resultsByCallId: Map<string, ToolResultMessage>;
   isStreamingTurn: boolean;
 }) {
+  const { t } = useI18n();
   const blocks = message.content;
   let lastThinkingIndex = -1;
   blocks.forEach((block, index) => {
@@ -275,11 +266,7 @@ export function MessageView({
               );
             case "redactedThinking":
               return (
-                <ThinkingBlock
-                  key={index}
-                  text="[reasoning content withheld by provider]"
-                  streaming={false}
-                />
+                <ThinkingBlock key={index} text={t("message.reasoningWithheld")} streaming={false} />
               );
             case "toolCall": {
               const call = block as ToolCall;

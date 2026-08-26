@@ -183,3 +183,20 @@ export function IconExternalLink({ className, size }: IconProps) {
     </svg>
   );
 }
+
+export function IconAtSign({ className, size }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
+    </svg>
+  );
+}
+
+export function IconZap({ className, size }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" />
+    </svg>
+  );
+}
