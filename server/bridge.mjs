@@ -399,6 +399,17 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`[bridge] Port ${PORT} is already in use.`);
+    console.error("[bridge] Another omp-web bridge is probably running - stop it first:");
+    console.error(`[bridge]   Windows: netstat -ano | findstr :${PORT}   then: taskkill /PID <pid> /F`);
+    console.error("[bridge]   Or pick another port: PORT=8788 pnpm dev");
+    process.exit(1);
+  }
+  throw err;
+});
+
 const wss = new WebSocketServer({ noServer: true });
 const children = new Set();
 
