@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { StoreProvider, useStore } from "./state/store";
+import { I18nProvider } from "./i18n";
 import { Sidebar } from "./components/Sidebar";
 import { SetupGuide } from "./components/SetupGuide";
 import { TopBar } from "./components/TopBar";
@@ -32,8 +33,10 @@ function Shell() {
 
 export default function App() {
   return (
-    <StoreProvider>
-      <Shell />
-    </StoreProvider>
+    <I18nProvider>
+      <StoreProvider>
+        <Shell />
+      </StoreProvider>
+    </I18nProvider>
   );
 }

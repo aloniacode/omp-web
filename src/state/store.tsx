@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { OmpRpcClient, type ConnStatus } from "../rpc/client";
+import { storeT } from "../i18n";
 import type {
   AgentEndFrame,
   AgentMessage,
@@ -93,13 +94,20 @@ export interface StoreActions {
   renameSession(name: string): void;
   deleteSession(path: string): Promise<void>;
   compact(): void;
-  setModel(provider: string, modelId: string): void;
-  setThinkingLevel(level: string): void;
   respondExtUi(request: ExtensionUiRequest, outcome: ExtOutcome): void;
   setComposerText(text: string): void;
   dismissNotice(id: number): void;
-  refreshSessions(): void;
   recheckHealth(): Promise<boolean>;
+  refreshSessions(): void;
+  setModel(provider: string, modelId: string): void;
+  setThinkingLevel(level: string): void;
+  setFastMode(enabled: boolean): void;
+  setSteeringMode(mode: "all" | "one-at-a-time"): void;
+  setFollowUpMode(mode: "all" | "one-at-a-time"): void;
+  setInterruptMode(mode: "immediate" | "wait"): void;
+  setAutoCompaction(enabled: boolean): void;
+  setAutoRetry(enabled: boolean): void;
+  exportHtml(): void;
 }
 
 export type ExtOutcome =
@@ -494,14 +502,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             void client.request({ type: "get_session_stats" });
           }
           break;
+        case "set_fast_mode":
+        case "set_steering_mode":
+        case "set_follow_up_mode":
+        case "set_interrupt_mode":
+        case "set_auto_compaction":
+        case "set_auto_retry":
+          if (resp.success) void client.request({ type: "get_state" });
+          break;
         case "set_session_name":
           if (resp.success) refreshSessions();
           break;
-        default:
-          break;
       }
   };
-
   // The sink identity must be stable across renders; routeResponse is defined
   // after handleFrame but both close over the same stable deps.
   const handleFrameRef = useRef(handleFrame);
@@ -607,7 +620,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       compact() {
         client.request({ type: "compact" }).then((resp) => {
           if (!resp.success) throw new Error(resp.error ?? "compact failed");
-          addNotice("info", "Context compacted");
+          addNotice("info", storeT("notice.compacted"));
           void client.request({ type: "get_state" });
           void client.request({ type: "get_session_stats" });
         }).catch((err: unknown) => fail(err, "compact"));
@@ -635,6 +648,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return;
         }
         client.send({ type: "extension_ui_response", id: request.id, value: outcome.value });
+      },
+
+      setFastMode(enabled: boolean) {
+        client.request({ type: "set_fast_mode", enabled }).catch((err: unknown) => fail(err, "fast mode"));
+      },
+
+      setSteeringMode(mode: "all" | "one-at-a-time") {
+        client.request({ type: "set_steering_mode", mode }).catch((err: unknown) => fail(err, "steering mode"));
+      },
+
+      setFollowUpMode(mode: "all" | "one-at-a-time") {
+        client.request({ type: "set_follow_up_mode", mode }).catch((err: unknown) => fail(err, "follow-up mode"));
+      },
+
+      setInterruptMode(mode: "immediate" | "wait") {
+        client.request({ type: "set_interrupt_mode", mode }).catch((err: unknown) => fail(err, "interrupt mode"));
+      },
+
+      setAutoCompaction(enabled: boolean) {
+        client.request({ type: "set_auto_compaction", enabled }).catch((err: unknown) => fail(err, "auto compaction"));
+      },
+
+      setAutoRetry(enabled: boolean) {
+        client.request({ type: "set_auto_retry", enabled }).catch((err: unknown) => fail(err, "auto retry"));
+      },
+
+      exportHtml() {
+        client
+          .request<{ path?: string }>({ type: "export_html" })
+          .then((resp) => {
+            if (!resp.success) throw new Error(resp.error ?? "export failed");
+            addNotice("info", resp.data?.path ? storeT("notice.exportedTo", { path: resp.data.path }) : storeT("notice.exported"), "export");
+          })
+          .catch((err: unknown) => fail(err, "export"));
       },
 
       setComposerText(text: string) {

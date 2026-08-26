@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../state/store";
+import { useI18n } from "../i18n";
 import type { ExtensionUiRequest } from "../rpc/types";
 import { ModalShell } from "./Sidebar";
 import { IconExternalLink, IconX } from "./icons";
@@ -14,6 +15,7 @@ export function ExtUiDialogs() {
 
 function ExtDialog({ request }: { request: ExtensionUiRequest }) {
   const { actions } = useStore();
+  const { t } = useI18n();
   const close = (outcome: Parameters<typeof actions.respondExtUi>[1]) => actions.respondExtUi(request, outcome);
   const cancel = () => close({ kind: "cancelled" });
 
@@ -48,7 +50,7 @@ function ExtDialog({ request }: { request: ExtensionUiRequest }) {
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-1.5 text-[13px] font-medium hover:border-accent dark:border-zinc-600"
           >
-            Open link <IconExternalLink size={13} />
+            {t("ext.openLink")} <IconExternalLink size={13} />
           </a>
           {request.launchUrl && (
             <p className="break-all font-mono text-[11.5px] text-zinc-400">{request.url}</p>
@@ -63,12 +65,12 @@ function ExtDialog({ request }: { request: ExtensionUiRequest }) {
   return (
     <ModalShell onClose={request.method === "select" || request.method === "input" || request.method === "editor" ? cancel : () => close({ kind: "dismissed" })}>
       <div className="flex items-start justify-between gap-3">
-        <h2 className="text-[15px] font-semibold">{request.title ?? "Agent needs your input"}</h2>
+        <h2 className="text-[15px] font-semibold">{request.title ?? t("ext.defaultTitle")}</h2>
         <button
           type="button"
           onClick={() => close({ kind: "dismissed" })}
           className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"
-          title="Dismiss"
+          title={t("ext.dismiss")}
         >
           <IconX size={14} />
         </button>
@@ -81,7 +83,7 @@ function ExtDialog({ request }: { request: ExtensionUiRequest }) {
             onClick={() => close({ kind: "confirmed", confirmed: false })}
             className="rounded-lg border border-zinc-300 px-3 py-1.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
-            No
+            {t("ext.no")}
           </button>
           <button
             type="button"
@@ -89,7 +91,7 @@ function ExtDialog({ request }: { request: ExtensionUiRequest }) {
             onClick={() => close({ kind: "confirmed", confirmed: true })}
             className="rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-foreground hover:bg-accent-hover"
           >
-            Yes
+            {t("ext.yes")}
           </button>
         </div>
       )}

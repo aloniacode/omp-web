@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useStore } from "../state/store";
+import { useI18n } from "../i18n";
 import { IconCheck, IconCopy } from "./icons";
 
 const INSTALL_OPTIONS: Array<{ label: string; command: string; note?: string }> = [
@@ -42,6 +43,7 @@ function InstallRow({ label, command }: { label: string; command: string }) {
 /** Blocking setup screen shown when the bridge cannot find the omp binary. */
 export function SetupGuide() {
   const { state, actions } = useStore();
+  const { t } = useI18n();
   const [checking, setChecking] = useState(false);
   const recheck = async () => {
     setChecking(true);
@@ -57,22 +59,17 @@ export function SetupGuide() {
             π
           </div>
           <div>
-            <h1 className="text-[16px] font-semibold text-zinc-900 dark:text-zinc-50">
-              未检测到 oh-my-pi
-            </h1>
-            <p className="text-[12.5px] text-zinc-500 dark:text-zinc-400">
-              oh-my-pi was not found on this machine
-            </p>
+<h1 className="text-[16px] font-semibold text-zinc-900 dark:text-zinc-50">{t("setup.title")}</h1>
+<p className="text-[12.5px] text-zinc-500 dark:text-zinc-400">{t("setup.subtitle")}</p>
           </div>
         </div>
 
         <p className="mt-4 text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-300">
-          omp web 只负责界面与通信，需要本机安装 <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[12px] dark:bg-zinc-800">omp</code> 编码代理。
-          桥接进程在
-          <code className="mx-1 rounded bg-zinc-100 px-1 py-0.5 font-mono text-[12px] dark:bg-zinc-800">
-            {state.health?.ompCwd || "当前目录"}
-          </code>
-          下查找 <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[12px] dark:bg-zinc-800">omp</code> 可执行文件（可用环境变量 <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[12px] dark:bg-zinc-800">OMP_BIN</code> 指定路径）。
+          {t("setup.body", {
+            omp: "omp",
+            cwd: state.health?.ompCwd || "—",
+            bin: "OMP_BIN",
+          })}
         </p>
 
         <div className="mt-4 space-y-2">
@@ -82,9 +79,7 @@ export function SetupGuide() {
         </div>
 
         <p className="mt-4 text-[12px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-          安装完成后无需重启本页面，点击下方按钮重新检测。安装后首次使用请先在终端运行一次
-          <code className="mx-1 rounded bg-zinc-100 px-1 py-0.5 font-mono text-[11.5px] dark:bg-zinc-800">omp</code>
-          完成模型配置（登录 / API Key）。
+          {t("setup.afterInstall", { omp: "omp" })}
         </p>
 
         <button
@@ -96,7 +91,7 @@ export function SetupGuide() {
           {checking && (
             <span className="inline-block size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
           )}
-          {checking ? "正在检测…" : "重新检测 Refresh"}
+          {checking ? t("setup.rechecking") : t("setup.recheck")}
         </button>
       </div>
     </div>

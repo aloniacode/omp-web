@@ -173,6 +173,7 @@ export interface RpcSessionState {
   sessionName?: string;
   fastModeEnabled?: boolean;
   fastModeActive?: boolean;
+  autoCompactionEnabled?: boolean;
   tokensPerSecond?: number | null;
   messageCount: number;
   queuedMessageCount: number;
@@ -334,6 +335,13 @@ export type RpcCommand =
   | { id?: string; type: "set_model"; provider: string; modelId: string }
   | { id?: string; type: "cycle_model" }
   | { id?: string; type: "get_available_models" }
+  | { id?: string; type: "set_fast_mode"; enabled: boolean }
+  | { id?: string; type: "set_steering_mode"; mode: "all" | "one-at-a-time" }
+  | { id?: string; type: "set_follow_up_mode"; mode: "all" | "one-at-a-time" }
+  | { id?: string; type: "set_interrupt_mode"; mode: "immediate" | "wait" }
+  | { id?: string; type: "set_auto_compaction"; enabled: boolean }
+  | { id?: string; type: "set_auto_retry"; enabled: boolean }
+  | { id?: string; type: "export_html"; outputPath?: string }
   | { id?: string; type: "set_thinking_level"; level: ThinkingLevel }
   | { id?: string; type: "cycle_thinking_level" }
   | { id?: string; type: "switch_session"; sessionPath: string }
