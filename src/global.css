@@ -240,3 +240,18 @@ body {
     visibility: hidden;
   }
 }
+
+/* Shiki code blocks (rendered HTML replaces plain <pre>) */
+.shiki-block pre {
+  margin: 0.65em 0;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  overflow-x: auto;
+}
+.shiki-block code {
+  background: transparent;
+  padding: 0;
+  font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
