@@ -12,6 +12,7 @@ const INSTALL_OPTIONS: Array<{ label: string; command: string; note?: string }> 
 ];
 
 function InstallRow({ label, command }: { label: string; command: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
