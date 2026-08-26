@@ -1,0 +1,72 @@
+/** Number/time formatting helpers for token and cost display. */
+
+export function fmtTokens(n: number | undefined | null): string {
+  if (n == null || !Number.isFinite(n)) return "0";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 2)}M`;
+  if (abs >= 1_000) return `${(n / 1_000).toFixed(abs >= 100_000 ? 0 : 1)}k`;
+  return String(Math.round(n));
+}
+
+export function fmtCost(usd: number | undefined | null): string {
+  if (usd == null || !Number.isFinite(usd)) return "$0";
+  if (usd === 0) return "$0";
+  if (usd >= 100) return `$${usd.toFixed(0)}`;
+  if (usd >= 1) return `$${usd.toFixed(2)}`;
+  if (usd >= 0.01) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(4)}`;
+}
+
+export function fmtPercent(p: number | undefined | null): string {
+  if (p == null || !Number.isFinite(p)) return "—";
+  return `${p.toFixed(1)}%`;
+}
+
+/** Output tokens per second given a request duration in ms. */
+export function fmtTokPerSec(outputTokens: number | undefined, durationMs: number | undefined): string | null {
+  if (!outputTokens || !durationMs || durationMs <= 0 || !Number.isFinite(durationMs)) return null;
+  const tps = (outputTokens / durationMs) * 1000;
+  if (!Number.isFinite(tps) || tps <= 0) return null;
+  return tps >= 100 ? `${tps.toFixed(0)} tok/s` : `${tps.toFixed(1)} tok/s`;
+}
+
+export function relTime(ms: number): string {
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return "just now";
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(ms).toLocaleDateString();
+}
+
+export function truncate(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, Math.max(0, max - 1))}…`;
+}
+
+/** Extract plain text out of a user-message content union. */
+export function userText(content: string | Array<{ type: string; text?: string }> | undefined | null): string {
+  if (!content) return "";
+  if (typeof content === "string") return content;
+  return content
+    .filter((b): b is { type: "text"; text: string } => b.type === "text")
+    .map((b) => b.text)
+    .join("\n");
+}
+
+export function toolArgsSummary(args: Record<string, unknown> | undefined, max = 80): string {
+  if (!args) return "";
+  const preferred = ["command", "path", "file", "file_path", "pattern", "query", "url", "name", "intent"];
+  for (const key of preferred) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim()) {
+      return truncate(value.replaceAll(/\s+/g, " ").trim(), max);
+    }
+  }
+  const firstString = Object.values(args).find((v) => typeof v === "string");
+  if (typeof firstString === "string") return truncate(firstString, max);
+  return "";
+}
