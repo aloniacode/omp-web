@@ -33,7 +33,7 @@ const ALIASES: Record<string, string> = {
   py: "python",
   golang: "go",
   htm: "html",
-  xm: "html",
+  xml: "html",
 };
 
 function normalizeLang(lang: string): string {

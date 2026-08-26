@@ -31,7 +31,7 @@ function InstallRow({ label, command }: { label: string; command: string }) {
       <button
         type="button"
         onClick={copy}
-        title="复制命令 Copy command"
+        title={t("setup.copyCommand")}
         className="shrink-0 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
       >
         {copied ? <IconCheck size={13} className="text-emerald-500" /> : <IconCopy size={13} />}

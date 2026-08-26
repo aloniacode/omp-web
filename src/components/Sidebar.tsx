@@ -5,9 +5,13 @@ import { relTime, truncate } from "../lib/format";
 import { useI18n } from "../i18n";
 import { ScrollArea } from "./ScrollArea";
 import { IconPencil, IconPlus, IconSearch, IconTrash, IconX } from "./icons";
-function sessionLabel(session: SessionMeta, untitled: string): { title: string; sub: string } {
+function sessionLabel(
+  session: SessionMeta,
+  untitled: string,
+  timeLabels: Parameters<typeof relTime>[1],
+): { title: string; sub: string } {
   const title = session.title ?? untitled;
-  const sub = session.preview && session.title ? truncate(session.preview, 60) : relTime(session.mtimeMs);
+  const sub = session.preview && session.title ? truncate(session.preview, 60) : relTime(session.mtimeMs, timeLabels);
   return { title: truncate(title, 48), sub };
 }
 
@@ -120,7 +124,12 @@ function SessionItem({
 }) {
   const { t } = useI18n();
   const { actions } = useStore();
-  const { title, sub } = sessionLabel(session, t("topbar.untitled"));
+  const { title, sub } = sessionLabel(session, t("topbar.untitled"), {
+    justNow: t("time.justNow"),
+    minutesAgo: t("time.minutesAgo"),
+    hoursAgo: t("time.hoursAgo"),
+    daysAgo: t("time.daysAgo"),
+  });
   return (
     <div
       className={`group relative rounded-lg ${active ? "bg-accent/10 dark:bg-accent/15" : "hover:bg-zinc-200/60 dark:hover:bg-zinc-800/70"}`}

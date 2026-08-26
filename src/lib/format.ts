@@ -30,15 +30,20 @@ export function fmtTokPerSec(outputTokens: number | undefined, durationMs: numbe
   return tps >= 100 ? `${tps.toFixed(0)} tok/s` : `${tps.toFixed(1)} tok/s`;
 }
 
-export function relTime(ms: number): string {
+export function relTime(
+  ms: number,
+  labels?: { justNow: string; minutesAgo: string; hoursAgo: string; daysAgo: string },
+): string {
   const diff = Date.now() - ms;
-  if (diff < 60_000) return "just now";
+  const l = labels ?? { justNow: "just now", minutesAgo: "{n}m ago", hoursAgo: "{h}h ago", daysAgo: "{d}d ago" };
+  const fill = (template: string, n: number) => template.replaceAll("{n}", String(n));
+  if (diff < 60_000) return l.justNow;
   const minutes = Math.floor(diff / 60_000);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return fill(l.minutesAgo, minutes);
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return fill(l.hoursAgo, hours);
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
+  if (days < 7) return fill(l.daysAgo, days);
   return new Date(ms).toLocaleDateString();
 }
 

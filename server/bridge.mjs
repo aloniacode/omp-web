@@ -195,8 +195,7 @@ class RpcChild {
     this.onFrame = onFrame;
     this.onExit = onExit;
     this.log = log;
-    this.maxReassembled = 64 * 1024 * 1024;
-    this.pendingChunk = null;
+    this.assembler = new FrameAssembler();
     this.exited = false;
     this.stderrTail = [];
 
@@ -272,70 +271,16 @@ class RpcChild {
         this.#chunkFail("malformed stdout frame");
         continue;
       }
-      if (obj?.type === "rpc_chunk") {
-        if (!this.#acceptChunk(obj)) continue;
-      } else {
-        this.#emit(obj);
+      const res = this.assembler.feed(obj);
+      if (res.error) {
+        this.#chunkFail(res.error);
+        continue;
       }
+      if (res.output !== null && res.output !== undefined) this.#emit(res.output);
     }
-  }
-
-  /**
-   * Accumulate `rpc_chunk` sequences; returns true when a full logical frame
-   * was reassembled (already emitted). Mirrors omp's RpcFrameDecoder rules:
-   * same chunkId, strictly ordered indices, no interleaving, byteLength checks.
-   */
-  #acceptChunk(frame) {
-    const { chunkId, index, count, byteLength, data } = frame;
-    if (
-      typeof chunkId !== "string" ||
-      !Number.isInteger(index) ||
-      !Number.isInteger(count) ||
-      count < 1 ||
-      index < 0 ||
-      !Number.isInteger(byteLength) ||
-      typeof data !== "string"
-    ) {
-      return this.#chunkFail("malformed rpc_chunk fields");
-    }
-    if (this.pendingChunk && this.pendingChunk.chunkId !== chunkId) {
-      return this.#chunkFail(`interleaved chunk sequence (${this.pendingChunk.chunkId} vs ${chunkId})`);
-    }
-    if (!this.pendingChunk) {
-      if (index !== 0) return this.#chunkFail(`chunk sequence starts at index ${index}`);
-      if (byteLength > this.maxReassembled) {
-        return this.#chunkFail(`reassembled frame ${byteLength} exceeds limit ${this.maxReassembled}`);
-      }
-      this.pendingChunk = { chunkId, count, byteLength, parts: [] };
-    } else if (
-      count !== this.pendingChunk.count ||
-      byteLength !== this.pendingChunk.byteLength
-    ) {
-      return this.#chunkFail("chunk metadata mismatch within sequence");
-    }
-    if (index !== this.pendingChunk.parts.length) {
-      return this.#chunkFail(`out-of-order chunk index ${index}, expected ${this.pendingChunk.parts.length}`);
-    }
-    this.pendingChunk.parts.push(Buffer.from(data, "base64"));
-
-    if (this.pendingChunk.parts.length < count) return false;
-
-    const { byteLength: expected, parts } = this.pendingChunk;
-    this.pendingChunk = null;
-    const buf = Buffer.concat(parts);
-    if (buf.length !== expected) return this.#chunkFail(`reassembly size mismatch (${buf.length} != ${expected})`);
-    try {
-      const decoder = new TextDecoder("utf-8", { fatal: true });
-      const json = decoder.decode(buf);
-      this.#emit(JSON.parse(json));
-    } catch (err) {
-      return this.#chunkFail(`reassembly decode failed: ${err.message}`);
-    }
-    return true;
   }
 
   #chunkFail(message) {
-    this.pendingChunk = null;
     this.log(`frame error: ${message}`);
     this.onFrame({ type: "bridge_event", event: "frame_error", error: message });
     return false;
