@@ -75,12 +75,17 @@ export function ChatList() {
               return <UserRow key={`u${index}`} entry={entry as unknown as ChatEntryUser} />;
             }
             if (entry.role === "assistant") {
+              // A new turn begins right after a user message; continuation
+              // messages (thinking / tools / answer) render without avatar.
+              const previous = state.messages[index - 1];
+              const isTurnStart = index === 0 || previous?.role === "user";
               return (
                 <MessageView
                   key={`a${index}`}
                   message={entry}
                   resultsByCallId={resultsByCallId}
                   isStreamingTurn={false}
+                  showAvatar={isTurnStart}
                 />
               );
             }

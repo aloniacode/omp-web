@@ -227,10 +227,13 @@ export function MessageView({
   message,
   resultsByCallId,
   isStreamingTurn,
+  showAvatar = true,
 }: {
   message: AssistantMessage;
   resultsByCallId: Map<string, ToolResultMessage>;
   isStreamingTurn: boolean;
+  /** Render the agent avatar only at the start of a turn. */
+  showAvatar?: boolean;
 }) {
   const { t } = useI18n();
   const blocks = message.content;
@@ -240,10 +243,12 @@ export function MessageView({
   });
 
   return (
-    <div className="flex gap-3">
-      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground shadow-sm">
-        <IconBot size={15} />
-      </div>
+    <div className={`flex gap-3 ${showAvatar ? "" : "pl-10"}`}>
+      {showAvatar && (
+        <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground shadow-sm">
+          <IconBot size={15} />
+        </div>
+      )}
       <div className="min-w-0 flex-1 space-y-2">
         {blocks.map((block, index) => {
           switch (block.type) {
