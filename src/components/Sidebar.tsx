@@ -1,10 +1,21 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useStore } from "../state/store";
 import type { SessionMeta } from "../rpc/types";
 import { relTime, truncate } from "../lib/format";
+import { togglePin, usePinned } from "../lib/pins";
 import { useI18n } from "../i18n";
 import { ScrollArea } from "./ScrollArea";
-import { IconPencil, IconPlus, IconSearch, IconTrash, IconX } from "./icons";
+import { IconPencil, IconPin, IconPlus, IconSearch, IconTrash, IconX } from "./icons";
+
+type GroupMode = "date" | "project";
+const GROUP_MODE_KEY = "omp-web.session-group";
+
+interface SessionGroup {
+  key: string;
+  label: string;
+  sessions: SessionMeta[];
+}
+
 function sessionLabel(
   session: SessionMeta,
   untitled: string,
@@ -15,7 +26,24 @@ function sessionLabel(
   return { title: truncate(title, 48), sub };
 }
 
-function RenameDialog({ target, onClose }: { target: SessionMeta; onClose: () => void }) {
+/** Short project name from a session cwd (works for win32 and posix paths). */
+function projectLabel(cwd: string | null): string {
+  if (!cwd) return "";
+  const parts = cwd.split(/[\\/]+/).filter(Boolean);
+  return parts[parts.length - 1] ?? cwd;
+}
+
+function dateBucket(ms: number): "today" | "yesterday" | "week" | "month" | "older" {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (ms >= startOfToday) return "today";
+  if (ms >= startOfToday - 86_400_000) return "yesterday";
+  if (ms >= startOfToday - 7 * 86_400_000) return "week";
+  if (ms >= startOfToday - 30 * 86_400_000) return "month";
+  return "older";
+}
+
+export function RenameDialog({ target, onClose }: { target: SessionMeta; onClose: () => void }) {
   const { t } = useI18n();
   const { actions } = useStore();
   const [name, setName] = useState(target.title ?? "");
@@ -43,7 +71,7 @@ function RenameDialog({ target, onClose }: { target: SessionMeta; onClose: () =>
   );
 }
 
-function DeleteDialog({ target, onClose }: { target: SessionMeta; onClose: () => void }) {
+export function DeleteDialog({ target, onClose }: { target: SessionMeta; onClose: () => void }) {
   const { t } = useI18n();
   const { actions } = useStore();
   return (
@@ -114,11 +142,13 @@ function SaveButton({ label, onClick }: { label: string; onClick: () => void }) 
 function SessionItem({
   session,
   active,
+  pinned,
   onRename,
   onDelete,
 }: {
   session: SessionMeta;
   active: boolean;
+  pinned: boolean;
   onRename: (s: SessionMeta) => void;
   onDelete: (s: SessionMeta) => void;
 }) {
@@ -137,16 +167,25 @@ function SessionItem({
       <button
         type="button"
         onClick={() => actions.openSession(session.path)}
-        className="block w-full px-3 py-2 pr-16 text-left"
+        className="block w-full px-3 py-2 pr-20 text-left"
       >
         <span
-          className={`block truncate text-[13.5px] font-medium ${active ? "text-accent" : "text-zinc-700 dark:text-zinc-200"}`}
+          className={`flex items-center gap-1 truncate text-[13.5px] font-medium ${active ? "text-accent" : "text-zinc-700 dark:text-zinc-200"}`}
         >
-          {title}
+          {pinned && <IconPin size={11} filled className="shrink-0 text-accent/70" />}
+          <span className="truncate">{title}</span>
         </span>
         <span className="mt-0.5 block truncate text-[11.5px] text-zinc-400 dark:text-zinc-500">{sub}</span>
       </button>
       <div className="absolute right-2 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex">
+        <button
+          type="button"
+          title={pinned ? t("sidebar.unpin") : t("sidebar.pin")}
+          onClick={() => togglePin(session.path)}
+          className="rounded-md p-1 text-zinc-400 hover:bg-zinc-300/70 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+        >
+          <IconPin size={13} filled={pinned} />
+        </button>
         <button
           type="button"
           title={t("sidebar.rename")}
@@ -171,9 +210,17 @@ function SessionItem({
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useI18n();
   const { state, actions } = useStore();
+  const pinned = usePinned();
   const [query, setQuery] = useState("");
+  const [groupMode, setGroupMode] = useState<GroupMode>(() =>
+    localStorage.getItem(GROUP_MODE_KEY) === "project" ? "project" : "date",
+  );
   const [renaming, setRenaming] = useState<SessionMeta | null>(null);
   const [deleting, setDeleting] = useState<SessionMeta | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem(GROUP_MODE_KEY, groupMode);
+  }, [groupMode]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -182,6 +229,55 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       (session) => (session.title ?? "").toLowerCase().includes(q) || session.preview.toLowerCase().includes(q),
     );
   }, [state.sessions, query]);
+
+  const groups = useMemo<SessionGroup[]>(() => {
+    const pinnedSet = new Set(pinned);
+    const pinnedSessions = filtered.filter((s) => pinnedSet.has(s.path));
+    const rest = filtered.filter((s) => !pinnedSet.has(s.path));
+
+    const groups: SessionGroup[] = [];
+    if (pinnedSessions.length > 0) {
+      groups.push({ key: "pinned", label: t("sidebar.pinned"), sessions: pinnedSessions });
+    }
+
+    if (groupMode === "date") {
+      const dateKeys = ["today", "yesterday", "week", "month", "older"] as const;
+      const byKey = new Map<string, SessionMeta[]>();
+      for (const session of rest) {
+        const bucket = dateBucket(session.mtimeMs);
+        const list = byKey.get(bucket) ?? [];
+        list.push(session);
+        byKey.set(bucket, list);
+      }
+      const labels: Record<(typeof dateKeys)[number], string> = {
+        today: t("sidebar.groupToday"),
+        yesterday: t("sidebar.groupYesterday"),
+        week: t("sidebar.groupThisWeek"),
+        month: t("sidebar.groupThisMonth"),
+        older: t("sidebar.groupOlder"),
+      };
+      for (const key of dateKeys) {
+        const sessions = byKey.get(key);
+        if (sessions?.length) groups.push({ key, label: labels[key], sessions });
+      }
+    } else {
+      const byCwd = new Map<string, { label: string; sessions: SessionMeta[]; lastUsedMs: number }>();
+      for (const session of rest) {
+        const entry = byCwd.get(session.cwd ?? "") ?? {
+          label: projectLabel(session.cwd) || t("sidebar.groupUnknownProject"),
+          sessions: [],
+          lastUsedMs: 0,
+        };
+        entry.sessions.push(session);
+        entry.lastUsedMs = Math.max(entry.lastUsedMs, session.mtimeMs);
+        byCwd.set(session.cwd ?? "", entry);
+      }
+      [...byCwd.entries()]
+        .sort((a, b) => b[1].lastUsedMs - a[1].lastUsedMs)
+        .forEach(([key, entry]) => groups.push({ key: `project:${key}`, label: entry.label, sessions: entry.sessions }));
+    }
+    return groups;
+  }, [filtered, groupMode, pinned, t]);
 
   return (
     <>
@@ -221,7 +317,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           </button>
         </div>
 
-        {/* Search */}
+        {/* Search + grouping toggle */}
         <div className="px-3 pb-2 pt-3">
           <div className="relative">
             <IconSearch size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
@@ -231,6 +327,22 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
               placeholder={t("sidebar.search")}
               className="w-full rounded-lg border border-transparent bg-zinc-200/60 py-1.5 pl-8 pr-3 text-[13px] outline-none placeholder:text-zinc-400 focus:border-accent focus:bg-white dark:bg-zinc-800/80 dark:focus:bg-zinc-800"
             />
+          </div>
+          <div className="mt-2 flex items-center gap-0.5 rounded-lg bg-zinc-200/60 p-0.5 dark:bg-zinc-800/80">
+            {(["date", "project"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setGroupMode(mode)}
+                className={`flex-1 rounded-md px-2 py-1 text-[11.5px] font-medium transition-colors ${
+                  groupMode === mode
+                    ? "bg-white text-zinc-700 shadow-sm dark:bg-zinc-700 dark:text-zinc-200"
+                    : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                }`}
+              >
+                {mode === "date" ? t("sidebar.groupDate") : t("sidebar.groupProject")}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -242,14 +354,24 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
               {query ? t("sidebar.noMatches") : t("sidebar.empty")}
             </p>
           )}
-          {filtered.map((session) => (
-            <SessionItem
-              key={session.path}
-              session={session}
-              active={session.path === state.activePath}
-              onRename={setRenaming}
-              onDelete={setDeleting}
-            />
+          {groups.map((group) => (
+            <div key={group.key} className="mt-2 first:mt-0">
+              <p className="px-2 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                {group.label}
+              </p>
+              <div className="space-y-0.5">
+                {group.sessions.map((session) => (
+                  <SessionItem
+                    key={session.path}
+                    session={session}
+                    active={session.path === state.activePath}
+                    pinned={pinned.includes(session.path)}
+                    onRename={setRenaming}
+                    onDelete={setDeleting}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
          </nav>
         </ScrollArea>
