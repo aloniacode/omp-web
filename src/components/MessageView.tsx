@@ -110,8 +110,15 @@ function ToolCard({ tool }: { tool: ToolView }) {
 
 // ── Thinking block ──────────────────────────────────────────────────────────
 
+/** Render cap for thinking text: opening a fold with tens of thousands of
+ *  characters in one <p> blocks layout for a visible moment. */
+const THINKING_PREVIEW_CHARS = 4_000;
+
 function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }) {
   const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const clipped = !expanded && text.length > THINKING_PREVIEW_CHARS;
+  const shown = clipped ? text.slice(0, THINKING_PREVIEW_CHARS) : text;
   return (
     <Collapsible
       tone="dim"
@@ -125,7 +132,18 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }
         </span>
       }
     >
-      <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">{text}</p>
+      <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">{shown}</p>
+      {text.length > THINKING_PREVIEW_CHARS && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 text-[11.5px] font-medium text-accent hover:underline"
+        >
+          {expanded
+            ? t("message.showLess")
+            : t("message.showAll", { chars: text.length.toLocaleString() })}
+        </button>
+      )}
     </Collapsible>
   );
 }

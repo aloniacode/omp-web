@@ -21,6 +21,8 @@ function isResponseFrame(value: unknown): value is RpcResponseFrame {
 }
 
 const MAX_BACKOFF_MS = 15_000;
+/** A connection must stay open this long to count as "stable" and reset backoff. */
+const STABLE_CONN_MS = 10_000;
 /**
  * Browser-side RPC channel. One WebSocket (`/ws`, proxied to the bridge) maps
  * to one `omp --mode rpc` child process owned by the bridge. Frames pass
@@ -34,6 +36,7 @@ export class OmpRpcClient {
   #frameSinks = new Set<FrameSink>();
   #statusSinks = new Set<StatusSink>();
   #attempt = 0;
+  #openedAt = 0;
   #userClosed = false;
   #disposed = false;
   #retryTimer?: ReturnType<typeof setTimeout>;
@@ -122,7 +125,7 @@ export class OmpRpcClient {
     this.#setStatus(this.#attempt === 0 ? "connecting" : "reconnecting");
 
     ws.onopen = () => {
-      this.#attempt = 0;
+      this.#openedAt = Date.now();
       this.#setStatus("connected");
     };
 
@@ -157,8 +160,14 @@ export class OmpRpcClient {
         this.#setStatus("closed");
         return;
       }
+      // Reset the backoff only when the connection proved stable; otherwise
+      // flapping connections (socket opens, agent dies, bridge closes) would
+      // loop forever at the initial 1s delay.
+      if (Date.now() - this.#openedAt >= STABLE_CONN_MS) this.#attempt = 0;
       this.#setStatus("reconnecting");
-      const delay = Math.min(1000 * 2 ** this.#attempt, MAX_BACKOFF_MS);
+      // Exponential backoff with jitter: 1s → 2s → 4s → … capped at 15s.
+      const base = Math.min(1000 * 2 ** this.#attempt, MAX_BACKOFF_MS);
+      const delay = base * (0.75 + Math.random() * 0.5);
       this.#attempt += 1;
       this.#retryTimer = setTimeout(() => this.#open(), delay);
     };
