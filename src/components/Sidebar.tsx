@@ -5,7 +5,8 @@ import { relTime, truncate } from "../lib/format";
 import { togglePin, usePinned } from "../lib/pins";
 import { useI18n } from "../i18n";
 import { ScrollArea } from "./ScrollArea";
-import { IconPencil, IconPin, IconPlus, IconSearch, IconTrash, IconX } from "./icons";
+import { SettingsDialog } from "./SettingsDialog";
+import { IconPencil, IconPin, IconPlus, IconSearch, IconSettings, IconTrash, IconX } from "./icons";
 
 type GroupMode = "date" | "project";
 const GROUP_MODE_KEY = "omp-web.session-group";
@@ -391,6 +392,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 function ConnectionRow() {
   const { t } = useI18n();
   const { state } = useStore();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const status = state.connStatus;
   const color =
     status === "connected"
@@ -419,6 +421,18 @@ function ConnectionRow() {
           {t("status.ompMissing")}
         </span>
       )}
+      <button
+        type="button"
+        onClick={() => setSettingsOpen(true)}
+        title={t("topbar.settings")}
+        aria-label={t("topbar.settings")}
+        className={`rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 ${
+          state.health?.ompResolved == null && status !== "closed" ? "" : "ml-auto"
+        }`}
+      >
+        <IconSettings size={14} />
+      </button>
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

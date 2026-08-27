@@ -3,7 +3,6 @@ import { Dropdown } from "@heroui/react";
 import { useI18n } from "../i18n";
 import { useStore } from "../state/store";
 import type { SessionMeta } from "../rpc/types";
-import { SettingsDialog } from "./SettingsDialog";
 import { DeleteDialog, RenameDialog } from "./Sidebar";
 import { isPinned, togglePin } from "../lib/pins";
 import { fmtCost, fmtPercent, fmtTokens } from "../lib/format";
@@ -130,7 +129,6 @@ function SessionMenu({ session }: { session: SessionMeta | null }) {
 export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const { t } = useI18n();
   const { state } = useStore();
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const streaming = Boolean(state.agentState?.isStreaming) || state.streamingMsg !== null;
   const queued = state.agentState?.queuedMessageCount ?? 0;
 
@@ -184,20 +182,6 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       <SessionMenu session={activeSession} />
 
       <UsageCluster />
-
-      <button
-        type="button"
-        onClick={() => setSettingsOpen(true)}
-        title={t("topbar.settings")}
-        className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
-        </svg>
-      </button>
-
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </header>
   );
 }
