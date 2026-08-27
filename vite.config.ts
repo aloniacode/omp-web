@@ -127,6 +127,26 @@ export default defineConfig({
     tailwindcss(),
     ompBridge(),
   ],
+  // Keep every react entry point in ONE optimizer pass: late-discovered deps
+  // (compiler-runtime, radix) re-bundle react into fresh chunks, giving the app
+  // two React instances ("Invalid hook call" / null dispatcher in dev).
+  optimizeDeps: {
+    include: [
+      "react",
+      "react-dom",
+      "react-dom/client",
+      "react/jsx-runtime",
+      "react/jsx-dev-runtime",
+      "react/compiler-runtime",
+      "@radix-ui/react-collapsible",
+      "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-popover",
+      "@radix-ui/react-slider",
+      "lucide-react",
+      "react-markdown",
+      "zustand",
+    ],
+  },
   server: {
     host: "127.0.0.1",
     port: 9527,
