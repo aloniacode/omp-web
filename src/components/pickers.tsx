@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dropdown, Slider } from "@heroui/react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -11,6 +11,70 @@ import { IconArrowUp, IconChevronDown, IconFolder } from "./icons";
 export function modelLabel(model: ModelInfo | undefined): string {
   if (!model) return "model";
   return `${model.provider}/${model.id}`;
+}
+
+/**
+ * Discrete 7-step thinking-intensity slider.
+ *
+ * Dragging is purely local (zero RPC, zero store traffic — that was the
+ * source of the jank: every intermediate step fired a `set_thinking_level`
+ * round-trip through the agent). The level is committed once on release via
+ * `onChangeEnd`; the local drag value hands over to the store value once the
+ * agent confirms it.
+ */
+function ThinkingSlider({ levelIndex, onCommit }: { levelIndex: number; onCommit: (index: number) => void }) {
+  const { t } = useI18n();
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const activeIndex = dragIndex ?? levelIndex;
+  const maxIndex = THINKING_LEVELS.length - 1;
+
+  // Hand control back to the store value once the agent confirms the change.
+  useEffect(() => {
+    setDragIndex(null);
+  }, [levelIndex]);
+
+  return (
+    <Slider
+      aria-label={t("picker.thinking")}
+      minValue={0}
+      maxValue={maxIndex}
+      step={1}
+      value={activeIndex}
+      onChange={(value) => setDragIndex(Math.round(Array.isArray(value) ? value[0] : value))}
+      onChangeEnd={(value) => onCommit(Math.round(Array.isArray(value) ? value[0] : value))}
+      className="w-56 outline-none"
+    >
+      <div className="mb-2.5 flex items-baseline justify-between">
+        <span className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
+          {t("picker.thinking")}
+        </span>
+        <span className="font-mono text-[11px] font-medium text-accent">{THINKING_LEVELS[activeIndex]}</span>
+      </div>
+      <Slider.Track className="relative h-4 w-full cursor-pointer touch-none">
+        {/* rail */}
+        <span className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+        {/* gradient fill */}
+        <Slider.Fill className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-gradient-to-r from-accent/60 to-accent" />
+        {/* step ticks: lit up to the active step, dim beyond */}
+        {THINKING_LEVELS.map((level, i) => (
+          <span
+            key={level}
+            style={{ left: `${(i / maxIndex) * 100}%` }}
+            className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full transition-all duration-200 ${
+              i <= activeIndex
+                ? "size-[5px] bg-accent-foreground/90 dark:bg-zinc-950"
+                : "size-[4px] bg-zinc-400/80 dark:bg-zinc-600"
+            } ${i === activeIndex ? "ring-2 ring-accent/25" : ""}`}
+          />
+        ))}
+        <Slider.Thumb className="top-1/2 size-3.5 -translate-y-1/2 rounded-full border-2 border-accent bg-white shadow-sm outline-none transition-transform duration-150 hover:scale-110 focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-95 dark:bg-zinc-900" />
+      </Slider.Track>
+      <div className="mt-1.5 flex justify-between font-mono text-[9.5px] uppercase tracking-wider text-zinc-400/80">
+        <span>{THINKING_LEVELS[0]}</span>
+        <span>{THINKING_LEVELS[maxIndex]}</span>
+      </div>
+    </Slider>
+  );
 }
 
 /**
@@ -69,34 +133,15 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
               </p>
             )}
           </div>
-          {/* Thinking level: segmented slider fixed below the model list */}
+          {/* Thinking level: intensity slider fixed below the model list */}
           <div className="border-t border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
-            <Slider
-              aria-label={t("picker.thinking")}
-              minValue={0}
-              maxValue={THINKING_LEVELS.length - 1}
-              step={1}
-              value={levelIndex}
-              onChange={(value) => {
-                const index = Math.round(Array.isArray(value) ? value[0] : value);
+            <ThinkingSlider
+              levelIndex={levelIndex}
+              onCommit={(index) => {
                 const level = THINKING_LEVELS[index];
                 if (level) actions.setThinkingLevel(level);
               }}
-              className="w-56"
-            >
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
-                  {t("picker.thinking")}
-                </span>
-                <span className="text-[11px] font-medium capitalize text-zinc-500 dark:text-zinc-400">
-                  {currentLevel ?? "medium"}
-                </span>
-              </div>
-              <Slider.Track className="relative h-1.5 w-full rounded-full bg-zinc-200 dark:bg-zinc-700">
-                <Slider.Fill className="h-full rounded-full bg-accent" />
-                <Slider.Thumb className="top-1/2 size-3.5 -translate-y-1/2 rounded-full border-2 border-accent bg-white shadow dark:bg-zinc-900" />
-              </Slider.Track>
-            </Slider>
+            />
           </div>
         </div>
       </Dropdown.Popover>

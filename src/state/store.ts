@@ -438,6 +438,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
         }
         break;
       case "set_fast_mode":
+      case "set_thinking_level":
       case "set_steering_mode":
       case "set_follow_up_mode":
       case "set_interrupt_mode":
