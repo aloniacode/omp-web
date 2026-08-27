@@ -217,30 +217,13 @@ function WebSettings() {
 
 // ── OMP settings (mirrors omp TUI /settings tabs and groups) ───────────────
 
-const OMP_TABS = [
-  "appearance",
-  "model",
-  "interaction",
-  "context",
-  "memory",
-  "files",
-  "shell",
-  "tools",
-  "tasks",
-  "providers",
-] as const;
+const OMP_TABS = ["model", "interaction", "context", "providers"] as const;
 type OmpTab = (typeof OMP_TABS)[number];
 
 const TAB_LABELS: Record<OmpTab, string> = {
-  appearance: "Appearance",
   model: "Model",
   interaction: "Interaction",
   context: "Context",
-  memory: "Memory",
-  files: "Files",
-  shell: "Shell",
-  tools: "Tools",
-  tasks: "Tasks",
   providers: "Providers",
 };
 
@@ -372,12 +355,6 @@ function OmpSettings({ autoRetry, onAutoRetryChange }: { autoRetry: boolean; onA
               />
             </Row>
           </Section>
-        )}
-
-        {!["model", "interaction", "context", "providers"].includes(tab) && (
-          <p className="py-6 text-center text-[12px] text-zinc-400 dark:text-zinc-500">
-            {t("settings.omp.remoteOnlyHint", { tab: TAB_LABELS[tab] })}
-          </p>
         )}
 
         <Section title="Session">

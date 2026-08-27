@@ -14,7 +14,6 @@ import { Markdown } from "./Markdown";
 import { useStore } from "../state/store";
 import {
   IconBot,
-  IconBrain,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
@@ -116,12 +115,12 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }
   return (
     <Collapsible
       tone="dim"
-      defaultOpen={streaming}
+      defaultOpen={false}
       title={
         <span className="flex items-center gap-2">
-          <IconBrain size={13} className="text-accent/70" />
+          <span className="text-[13px] leading-none">☁️</span>
           <span className="text-zinc-500 dark:text-zinc-400">
-            {streaming ? t("message.thinking") : t("message.thoughtProcess")}
+            {streaming ? t("message.thinking") : t("message.thoughtDone")}
           </span>
         </span>
       }

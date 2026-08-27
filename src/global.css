@@ -255,3 +255,12 @@ body {
   font-size: 0.82rem;
   line-height: 1.55;
 }
+
+/* Overlay scrollbar: hide the native one entirely (custom thumb floats over content) */
+.scroll-area-viewport {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scroll-area-viewport::-webkit-scrollbar {
+  display: none;
+}

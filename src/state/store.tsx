@@ -83,6 +83,8 @@ export interface AppState {
   extStack: ExtensionUiRequest[];
   composerText: string;
   stopping: boolean;
+  /** Prompt accepted; waiting for the agent's first event (working indicator). */
+  awaitingAgent: boolean;
   modelsLoaded: boolean;
 }
 
@@ -135,6 +137,7 @@ const initialState: AppState = {
   extStack: [],
   composerText: "",
   stopping: false,
+  awaitingAgent: false,
 };
 
 type Action =
@@ -158,7 +161,8 @@ type Action =
   | { type: "pop_ext_ui"; id: string }
   | { type: "composer_text"; text: string }
   | { type: "session_name"; name: string }
-  | { type: "stopping"; value: boolean };
+  | { type: "stopping"; value: boolean }
+  | { type: "awaiting_agent"; value: boolean };
 
 let noticeSeq = 1;
 
@@ -224,6 +228,7 @@ function reducer(state: AppState, action: Action): AppState {
         toolRuns: [],
         stats: null,
         stopping: false,
+        awaitingAgent: false,
       };
     case "notice":
       return { ...state, notices: [...state.notices.slice(-49), action.notice] };
@@ -239,6 +244,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, sessionName: action.name };
     case "stopping":
       return { ...state, stopping: action.value };
+    case "awaiting_agent":
+      return { ...state, awaitingAgent: action.value };
     default:
       return state;
   }
@@ -354,6 +361,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           dispatch({ type: "streaming", message: null });
           dispatch({ type: "clear_tool_runs" });
           dispatch({ type: "stopping", value: false });
+          dispatch({ type: "awaiting_agent", value: false });
           void client.request({ type: "get_session_stats" });
           void client.request({ type: "get_state" });
           refreshSessions();
@@ -366,6 +374,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const stream = frame as SessionEventFrame & { message?: AssistantMessage };
           if (stream.message && stream.message.role === "assistant") {
             dispatch({ type: "streaming", message: stream.message });
+            dispatch({ type: "awaiting_agent", value: false });
           }
           break;
         }
@@ -575,12 +584,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const command = streaming
           ? ({ type: "prompt", message: trimmed, images, streamingBehavior: "followUp" } as const)
           : ({ type: "prompt", message: trimmed, images } as const);
+        dispatch({ type: "awaiting_agent", value: true });
         client
           .request<{ agentInvoked?: boolean }>(command)
           .then((resp) => {
             if (!resp.success) throw new Error(resp.error ?? "prompt rejected");
             if (resp.data?.agentInvoked === true) return; // turn lifecycle takes over
             dispatch({ type: "patch_pending", failed: false });
+            dispatch({ type: "awaiting_agent", value: false });
             void client.request({ type: "get_state" });
           })
           .catch((err: unknown) => {

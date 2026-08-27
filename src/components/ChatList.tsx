@@ -36,6 +36,25 @@ function EmptyState() {
   );
 }
 
+function AgentWorkingRow() {
+  const { t } = useI18n();
+  return (
+    <div className="flex gap-3">
+      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground shadow-sm">
+        <IconBot size={15} />
+      </div>
+      <div className="flex min-w-0 flex-1 items-center gap-2 pt-1">
+        <span className="flex gap-1">
+          <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:0ms]" />
+          <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:150ms]" />
+          <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:300ms]" />
+        </span>
+        <span className="text-[12.5px] text-zinc-400 dark:text-zinc-500">{t("chat.agentWorking")}</span>
+      </div>
+    </div>
+  );
+}
+
 export function ChatList() {
   const { state } = useStore();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -98,6 +117,10 @@ export function ChatList() {
               resultsByCallId={resultsByCallId}
               isStreamingTurn
             />
+          )}
+
+          {state.awaitingAgent && !state.streamingMsg && state.toolRuns.length === 0 && (
+            <AgentWorkingRow />
           )}
         </div>
       )}

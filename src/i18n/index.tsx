@@ -39,6 +39,7 @@ export const messages = {
     "topbar.settings": "Settings",
     "topbar.toggleSidebar": "Toggle sidebar",
 
+    "chat.agentWorking": "Agent is thinking…",
     "chat.suggestion.1": "Explain this codebase",
     "chat.suggestion.2": "Find and fix failing tests",
     "chat.suggestion.3": "Review uncommitted changes",
@@ -62,8 +63,8 @@ export const messages = {
     "composer.usageCost": "estimated conversation cost",
     "composer.usageContext": "Context: {used} / {window} tokens ({percent})",
 
-    "message.thinking": "Thinking…",
-    "message.thoughtProcess": "Thought process",
+    "message.thinking": "☁️ Thinking…",
+    "message.thoughtDone": "☁️ Thought",
     "message.reasoningWithheld": "[reasoning content withheld by provider]",
     "message.aborted": "aborted",
     "message.error": "error",
@@ -128,7 +129,6 @@ export const messages = {
     "settings.omp.sessionFile": "Transcript file",
     "settings.omp.exportHtml": "Export HTML",
     "settings.omp.exportHint": "Save the full transcript as a self-contained HTML file",
-    "settings.omp.remoteOnlyHint": "The {tab} tab is configured in the omp TUI (/settings). Web controls cover the RPC-exposed surface.",
 
     "setup.title": "oh-my-pi not found",
     "setup.subtitle": "oh-my-pi was not found on this machine",
@@ -172,6 +172,7 @@ export const messages = {
     "topbar.settings": "设置",
     "topbar.toggleSidebar": "切换侧边栏",
 
+    "chat.agentWorking": "智能体思考中…",
     "chat.suggestion.1": "解释这个代码库",
     "chat.suggestion.2": "查找并修复失败的测试",
     "chat.suggestion.3": "审查未提交的更改",
@@ -195,8 +196,8 @@ export const messages = {
     "composer.usageCost": "对话预估费用",
     "composer.usageContext": "上下文：{used} / {window} tokens（{percent}）",
 
-    "message.thinking": "思考中…",
-    "message.thoughtProcess": "思考过程",
+    "message.thinking": "☁️ 思考中…",
+    "message.thoughtDone": "☁️ 已思考",
     "message.reasoningWithheld": "[推理内容已被提供方隐藏]",
     "message.aborted": "已中止",
     "message.error": "错误",
@@ -248,7 +249,6 @@ export const messages = {
     "settings.omp.sessionFile": "记录文件",
     "settings.omp.exportHtml": "导出 HTML",
     "settings.omp.exportHint": "将完整对话记录保存为独立 HTML 文件",
-    "settings.omp.remoteOnlyHint": "{tab} 标签页由 omp TUI（/settings）管理。网页端仅提供 RPC 暴露的设置项。",
 
     "setup.title": "未检测到 oh-my-pi",
     "setup.body": "omp web 只负责界面与通信，需要本机安装 {omp} 编码智能体。桥接进程在 {cwd} 下查找 {omp} 可执行文件（可用环境变量 {bin} 指定路径）。",
