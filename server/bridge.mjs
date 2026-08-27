@@ -572,3 +572,26 @@ for (const sig of ["SIGINT", "SIGTERM"]) {
     setTimeout(() => process.exit(0), 1500);
   });
 }
+
+/**
+ * Parent watchdog: when spawned by the vite dev server (OMP_PARENT_PID),
+ * exit if the parent dies so a hard-killed vite never leaves an orphaned
+ * bridge holding the port.
+ */
+const parentPid = Number(process.env.OMP_PARENT_PID ?? 0);
+if (parentPid > 0) {
+  const watchdog = setInterval(() => {
+    let alive = true;
+    try {
+      process.kill(parentPid, 0);
+    } catch {
+      alive = false;
+    }
+    if (!alive) {
+      clearInterval(watchdog);
+      for (const child of children) child.dispose(true);
+      setTimeout(() => process.exit(0), 1000);
+    }
+  }, 2000);
+  watchdog.unref();
+}
