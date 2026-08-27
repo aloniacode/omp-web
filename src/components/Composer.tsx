@@ -179,9 +179,49 @@ export function Composer() {
     });
   };
 
+  /**
+   * TUI-style quick commands intercepted before the prompt is sent.
+   * Returns false for unknown commands (or missing arguments) so the text
+   * still reaches the agent as a normal message.
+   */
+  const runSlashCommand = (text: string): boolean => {
+    const match = text.match(/^\/(compact|new|export|stop|name)(?:\s+([\s\S]*))?$/);
+    if (!match) return false;
+    const [, cmd, rest = ""] = match;
+    const arg = rest.trim();
+    switch (cmd) {
+      case "compact":
+        actions.compact(arg || undefined);
+        return true;
+      case "new":
+        actions.newChat();
+        return true;
+      case "export":
+        actions.exportHtml();
+        return true;
+      case "stop":
+        actions.stop();
+        return true;
+      case "name":
+        if (arg) {
+          actions.renameSession(arg);
+          return true;
+        }
+        return false;
+      default:
+        return false;
+    }
+  };
+
   const submit = () => {
     const text = state.composerText.trim();
     if ((!text && attachments.length === 0) || !connected) return;
+    if (text.startsWith("/") && runSlashCommand(text)) {
+      actions.setComposerText("");
+      setAttachments([]);
+      setMention(null);
+      return;
+    }
     actions.sendPrompt(text, attachmentsToContent(attachments));
     actions.setComposerText("");
     setAttachments([]);
@@ -386,7 +426,11 @@ export function Composer() {
         <div className="mt-1.5 flex flex-wrap items-center gap-2 px-1">
           <ModelPicker compact />
         </div>
-        <p className="mt-1 text-center text-[11px] text-zinc-400 dark:text-zinc-500">{t("composer.hint")}</p>
+        <p className="mt-1 text-center text-[11px] text-zinc-400 dark:text-zinc-500">
+          {t("composer.hint")}
+          <span className="mx-1.5 text-zinc-300 dark:text-zinc-600">·</span>
+          {t("composer.slashHint")}
+        </p>
       </div>
     </div>
   );

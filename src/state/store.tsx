@@ -95,7 +95,7 @@ export interface StoreActions {
   openSession(path: string): void;
   renameSession(name: string): void;
   deleteSession(path: string): Promise<void>;
-  compact(): void;
+  compact(customInstructions?: string): void;
   respondExtUi(request: ExtensionUiRequest, outcome: ExtOutcome): void;
   setComposerText(text: string): void;
   dismissNotice(id: number): void;
@@ -634,8 +634,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       },
 
-      compact() {
-        client.request({ type: "compact" }).then((resp) => {
+      compact(customInstructions?: string) {
+        client.request({ type: "compact", customInstructions }).then((resp) => {
           if (!resp.success) throw new Error(resp.error ?? "compact failed");
           addNotice("info", storeT("notice.compacted"));
           void client.request({ type: "get_state" });

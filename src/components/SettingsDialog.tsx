@@ -335,7 +335,7 @@ function OmpSettings({ autoRetry, onAutoRetryChange }: { autoRetry: boolean; onA
             <Row label={t("settings.omp.compactNow")}>
               <button
                 type="button"
-                onClick={actions.compact}
+                onClick={() => actions.compact()}
                 disabled={!state.agentReady || Boolean(s?.isCompacting)}
                 className="rounded-lg border border-zinc-200 px-2.5 py-1 text-[12px] font-medium text-zinc-600 hover:border-accent hover:text-accent disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300"
               >
