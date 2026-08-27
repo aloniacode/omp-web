@@ -227,3 +227,21 @@ export function IconPin({ className, size, filled }: IconProps & { filled?: bool
     </svg>
   );
 }
+
+export function IconDots({ className, size }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function IconCompress({ className, size }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <path d="M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5" />
+    </svg>
+  );
+}

@@ -49,6 +49,11 @@ export const messages = {
     "topbar.untitled": "New conversation",
     "topbar.settings": "Settings",
     "topbar.toggleSidebar": "Toggle sidebar",
+    "topbar.more": "More actions",
+    "topbar.rename": "Rename",
+    "topbar.delete": "Delete",
+    "topbar.exportHtml": "Export HTML",
+    "topbar.compact": "Compact context",
 
     "chat.agentWorking": "Agent is thinking…",
     "chat.suggestion.1": "Explain this codebase",
@@ -193,6 +198,11 @@ export const messages = {
     "topbar.untitled": "新对话",
     "topbar.settings": "设置",
     "topbar.toggleSidebar": "切换侧边栏",
+    "topbar.more": "更多操作",
+    "topbar.rename": "重命名",
+    "topbar.delete": "删除",
+    "topbar.exportHtml": "导出 HTML",
+    "topbar.compact": "压缩上下文",
 
     "chat.agentWorking": "智能体思考中…",
     "chat.suggestion.1": "解释这个代码库",

@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Dropdown } from "@heroui/react";
 import { useI18n } from "../i18n";
 import { useStore } from "../state/store";
+import type { SessionMeta } from "../rpc/types";
 import { SettingsDialog } from "./SettingsDialog";
+import { DeleteDialog, RenameDialog } from "./Sidebar";
+import { isPinned, togglePin } from "../lib/pins";
 import { fmtCost, fmtPercent, fmtTokens } from "../lib/format";
-import { IconPanelLeft } from "./icons";
+import { IconCompress, IconDots, IconExternalLink, IconPanelLeft, IconPencil, IconPin, IconTrash } from "./icons";
 
 /** Centered conversation usage cluster: tokens · cost · context. */
 function UsageCluster() {
@@ -44,6 +48,85 @@ function UsageCluster() {
   );
 }
 
+/** More-actions menu for the active session: rename, pin, compact, export, delete. */
+function SessionMenu({ session }: { session: SessionMeta | null }) {
+  const { t } = useI18n();
+  const { state, actions } = useStore();
+  const [renaming, setRenaming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const hasSession = state.sessionId != null;
+  const pinned = isPinned(session?.path ?? null);
+
+  return (
+    <>
+      <Dropdown>
+        <Dropdown.Trigger
+          aria-label={t("topbar.more")}
+          className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+        >
+          <IconDots size={16} />
+        </Dropdown.Trigger>
+        <Dropdown.Popover placement="bottom end">
+          <Dropdown.Menu
+            onAction={(key) => {
+              switch (String(key)) {
+                case "rename":
+                  setRenaming(true);
+                  break;
+                case "pin":
+                  if (session?.path) togglePin(session.path);
+                  break;
+                case "compact":
+                  actions.compact();
+                  break;
+                case "export":
+                  actions.exportHtml();
+                  break;
+                case "delete":
+                  setDeleting(true);
+                  break;
+              }
+            }}
+          >
+            <Dropdown.Item key="rename" id="rename" textValue={t("topbar.rename")} isDisabled={!hasSession}>
+              <span className="flex items-center gap-2 text-[13px]">
+                <IconPencil size={13} className="text-zinc-400" />
+                {t("topbar.rename")}
+              </span>
+            </Dropdown.Item>
+            <Dropdown.Item key="pin" id="pin" textValue={t("sidebar.pin")} isDisabled={!session?.path}>
+              <span className="flex items-center gap-2 text-[13px]">
+                <IconPin size={13} className="text-zinc-400" filled={pinned} />
+                {pinned ? t("sidebar.unpin") : t("sidebar.pin")}
+              </span>
+            </Dropdown.Item>
+            <Dropdown.Item key="compact" id="compact" textValue={t("topbar.compact")}>
+              <span className="flex items-center gap-2 text-[13px]">
+                <IconCompress size={13} className="text-zinc-400" />
+                {t("topbar.compact")}
+              </span>
+            </Dropdown.Item>
+            <Dropdown.Item key="export" id="export" textValue={t("topbar.exportHtml")}>
+              <span className="flex items-center gap-2 text-[13px]">
+                <IconExternalLink size={13} className="text-zinc-400" />
+                {t("topbar.exportHtml")}
+              </span>
+            </Dropdown.Item>
+            <Dropdown.Item key="delete" id="delete" textValue={t("topbar.delete")} isDisabled={!session?.path}>
+              <span className="flex items-center gap-2 text-[13px] text-red-600 dark:text-red-400">
+                <IconTrash size={13} />
+                {t("topbar.delete")}
+              </span>
+            </Dropdown.Item>
+          </Dropdown.Menu>
+        </Dropdown.Popover>
+      </Dropdown>
+      {renaming && session && <RenameDialog target={session} onClose={() => setRenaming(false)} />}
+      {deleting && session && <DeleteDialog target={session} onClose={() => setDeleting(false)} />}
+    </>
+  );
+}
+
 export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const { t } = useI18n();
   const { state } = useStore();
@@ -54,6 +137,22 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const title =
     state.sessionName ??
     (state.sessionId ? t("topbar.session", { id: state.sessionId.slice(0, 8) }) : t("topbar.untitled"));
+
+  const activeSession: SessionMeta | null = useMemo(() => {
+    const listed = state.sessions.find((s) => s.path === state.activePath);
+    if (listed) return listed;
+    if (!state.activePath) return null;
+    return {
+      path: state.activePath,
+      id: state.sessionId ?? "",
+      cwd: null,
+      title: state.sessionName,
+      preview: "",
+      mtimeMs: 0,
+      size: 0,
+      startedAt: null,
+    };
+  }, [state.sessions, state.activePath, state.sessionId, state.sessionName]);
 
   return (
     <header className="relative flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white px-3 sm:px-4 dark:border-zinc-800 dark:bg-zinc-900/80">
@@ -81,6 +180,8 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
           </span>
         )}
       </h1>
+
+      <SessionMenu session={activeSession} />
 
       <UsageCluster />
 
