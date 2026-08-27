@@ -40,7 +40,12 @@ function Collapsible({
         <Disclosure.Indicator className="shrink-0 text-zinc-400" />
         <span className="min-w-0 flex-1 truncate">{title}</span>
       </Disclosure.Trigger>
-      <Disclosure.Content className="px-3 pb-3">{children}</Disclosure.Content>
+      {/* Padding lives on an inner wrapper: the collapsed panel is height 0
+          with overflow clip, and padding on the panel itself would still
+          occupy space — leaving a dead strip the trigger hover can't cover. */}
+      <Disclosure.Content>
+        <div className="px-3 pb-3">{children}</div>
+      </Disclosure.Content>
     </Disclosure>
   );
 }
