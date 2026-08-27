@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { ToolResultMessage } from "../rpc/types";
 import { useAppStore } from "../state/store";
 import { setComposerText } from "../state/composerText";
@@ -70,6 +70,7 @@ function WorkingRow() {
 
 export function ChatList() {
   const messages = useAppStore((s) => s.messages);
+  const activePath = useAppStore((s) => s.activePath);
   const hasLiveContent = useAppStore((s) => s.streamingMsg !== null || s.toolRuns.length > 0 || s.awaitingAgent);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -83,19 +84,35 @@ export function ChatList() {
     return map;
   }, [messages]);
 
+  // A freshly opened session starts pinned to the bottom.
+  useEffect(() => {
+    stickToBottom.current = true;
+  }, [activePath]);
+
+  // Committed messages arrive async after the path change (loadAllMessages);
+  // a layout effect scrolls after the DOM commit, when scrollHeight is real.
+  useLayoutEffect(() => {
+    if (!stickToBottom.current) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, hasLiveContent]);
+
   // Follow-the-bottom scroll driven by a store subscription: streaming tokens
   // update the DOM without re-rendering the whole committed message list.
+  // rAF defers the scroll until after React has committed the DOM update.
   useEffect(() => {
     let prev = useAppStore.getState();
+    let raf = 0;
     return useAppStore.subscribe((state) => {
       const changed =
-        state.messages !== prev.messages ||
-        state.streamingMsg !== prev.streamingMsg ||
-        state.toolRuns !== prev.toolRuns;
+        state.streamingMsg !== prev.streamingMsg || state.toolRuns !== prev.toolRuns;
       prev = state;
-      if (!changed) return;
-      const el = scrollRef.current;
-      if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
+      if (!changed || raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const el = scrollRef.current;
+        if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
+      });
     });
   }, []);
 
