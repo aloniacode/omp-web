@@ -11,7 +11,7 @@ import type {
 import { fmtCost, fmtTokPerSec, fmtTokens, truncate, userText } from "../lib/format";
 import { useI18n } from "../i18n";
 import { Markdown } from "./Markdown";
-import { useStore } from "../state/store";
+import { useAppStore } from "../state/store";
 import {
   IconBot,
   IconCheck,
@@ -195,8 +195,7 @@ function ConnectedToolCard({
   call: ToolCall;
   resultsByCallId: Map<string, ToolResultMessage>;
 }) {
-  const { state } = useStore();
-  const liveRun = state.toolRuns.find((run) => run.toolCallId === call.id);
+  const liveRun = useAppStore((s) => s.toolRuns.find((run) => run.toolCallId === call.id));
   const committedResult = resultsByCallId.get(call.id);
   const view: ToolView = liveRun
     ? {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { StoreProvider, useStore } from "./state/store";
+import { useAppStore } from "./state/store";
 import { I18nProvider } from "./i18n";
 import { Sidebar } from "./components/Sidebar";
 import { SetupGuide } from "./components/SetupGuide";
@@ -9,11 +9,11 @@ import { Composer } from "./components/Composer";
 import { ExtUiDialogs, Toasts } from "./components/Overlays";
 
 function Shell() {
-  const { state } = useStore();
+  const health = useAppStore((s) => s.health);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
 
   // Blocking install guide until the bridge finds the omp binary.
-  if (state.health && !state.health.ompResolved) {
+  if (health && !health.ompResolved) {
     return <SetupGuide />;
   }
 
@@ -34,9 +34,7 @@ function Shell() {
 export default function App() {
   return (
     <I18nProvider>
-      <StoreProvider>
-        <Shell />
-      </StoreProvider>
+      <Shell />
     </I18nProvider>
   );
 }

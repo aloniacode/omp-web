@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Dropdown, Slider } from "@heroui/react";
+import { useShallow } from "zustand/react/shallow";
 
-import { useStore } from "../state/store";
+import { useActions, useAppStore } from "../state/store";
 import { useI18n } from "../i18n";
 import type { ModelInfo } from "../rpc/types";
 import { THINKING_LEVELS } from "../rpc/types";
@@ -18,12 +19,13 @@ export function modelLabel(model: ModelInfo | undefined): string {
  * plain popover (no Menu) so the slider keeps pointer/keyboard focus.
  */
 export function ModelPicker({ compact = false }: { compact?: boolean }) {
-  const { state, actions } = useStore();
+  const actions = useActions();
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const current = state.agentState?.model;
-  const currentLevel = state.agentState?.thinkingLevel;
-  const models = state.models.slice(0, 400);
+  const current = useAppStore((s) => s.agentState?.model);
+  const currentLevel = useAppStore((s) => s.agentState?.thinkingLevel);
+  const models = useAppStore(useShallow((s) => s.models.slice(0, 400)));
+  const modelsLoaded = useAppStore((s) => s.modelsLoaded);
   const levelIndex = Math.max(
     0,
     currentLevel ? THINKING_LEVELS.indexOf(currentLevel) : THINKING_LEVELS.indexOf("medium"),
@@ -63,7 +65,7 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
             })}
             {models.length === 0 && (
               <p className="px-2.5 py-3 text-center text-[12px] text-zinc-400">
-                {state.modelsLoaded ? t("picker.noModels") : t("picker.loadingModels")}
+                {modelsLoaded ? t("picker.noModels") : t("picker.loadingModels")}
               </p>
             )}
           </div>
@@ -119,20 +121,21 @@ function normPath(p: string): string {
  * client reconnects into the new cwd.
  */
 export function ProjectPicker() {
-  const { state, actions } = useStore();
+  const actions = useActions();
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const current = state.projectCwd ?? state.health?.ompCwd ?? "";
+  const projects = useAppStore(useShallow((s) => s.projects));
+  const current = useAppStore((s) => s.projectCwd ?? s.health?.ompCwd) ?? "";
 
   const q = query.trim();
   const qNorm = normPath(q);
   const filtered = qNorm
-    ? state.projects.filter((p) => normPath(p.cwd).includes(qNorm) || dirName(p.cwd).toLowerCase().includes(qNorm))
-    : state.projects;
+    ? projects.filter((p) => normPath(p.cwd).includes(qNorm) || dirName(p.cwd).toLowerCase().includes(qNorm))
+    : projects;
   const isKnown =
     qNorm.length > 0 &&
-    (state.projects.some((p) => normPath(p.cwd) === qNorm) || normPath(current) === qNorm);
+    (projects.some((p) => normPath(p.cwd) === qNorm) || normPath(current) === qNorm);
   const custom = q && !isKnown ? q : null;
 
   const close = () => {

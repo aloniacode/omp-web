@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Dropdown } from "@heroui/react";
 import { useI18n } from "../i18n";
-import { useStore } from "../state/store";
+import { useActions, useAppStore } from "../state/store";
 import type { SessionMeta } from "../rpc/types";
 import { DeleteDialog, RenameDialog } from "./Sidebar";
 import { isPinned, togglePin } from "../lib/pins";
@@ -11,9 +11,8 @@ import { IconCompress, IconDots, IconExternalLink, IconPanelLeft, IconPencil, Ic
 /** Centered conversation usage cluster: tokens · cost · context. */
 function UsageCluster() {
   const { t } = useI18n();
-  const { state } = useStore();
-  const usage = state.stats;
-  const context = state.stats?.contextUsage ?? state.agentState?.contextUsage;
+  const usage = useAppStore((s) => s.stats);
+  const context = useAppStore((s) => s.agentState?.contextUsage);
   if (!usage) return null;
   const ctxHot = context != null && context.percent >= 80;
   return (
@@ -50,10 +49,10 @@ function UsageCluster() {
 /** More-actions menu for the active session: rename, pin, compact, export, delete. */
 function SessionMenu({ session }: { session: SessionMeta | null }) {
   const { t } = useI18n();
-  const { state, actions } = useStore();
+  const actions = useActions();
+  const hasSession = useAppStore((s) => s.sessionId != null);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const hasSession = state.sessionId != null;
   const pinned = isPinned(session?.path ?? null);
 
   return (
@@ -128,29 +127,33 @@ function SessionMenu({ session }: { session: SessionMeta | null }) {
 
 export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const { t } = useI18n();
-  const { state } = useStore();
-  const streaming = Boolean(state.agentState?.isStreaming) || state.streamingMsg !== null;
-  const queued = state.agentState?.queuedMessageCount ?? 0;
+  const agentState = useAppStore((s) => s.agentState);
+  const sessionName = useAppStore((s) => s.sessionName);
+  const sessionId = useAppStore((s) => s.sessionId);
+  const sessions = useAppStore((s) => s.sessions);
+  const activePath = useAppStore((s) => s.activePath);
+  const hasStreamMsg = useAppStore((s) => s.streamingMsg !== null);
+  const streaming = Boolean(agentState?.isStreaming) || hasStreamMsg;
+  const queued = agentState?.queuedMessageCount ?? 0;
 
   const title =
-    state.sessionName ??
-    (state.sessionId ? t("topbar.session", { id: state.sessionId.slice(0, 8) }) : t("topbar.untitled"));
+    sessionName ?? (sessionId ? t("topbar.session", { id: sessionId.slice(0, 8) }) : t("topbar.untitled"));
 
   const activeSession: SessionMeta | null = useMemo(() => {
-    const listed = state.sessions.find((s) => s.path === state.activePath);
+    const listed = sessions.find((s) => s.path === activePath);
     if (listed) return listed;
-    if (!state.activePath) return null;
+    if (!activePath) return null;
     return {
-      path: state.activePath,
-      id: state.sessionId ?? "",
+      path: activePath,
+      id: sessionId ?? "",
       cwd: null,
-      title: state.sessionName,
+      title: sessionName,
       preview: "",
       mtimeMs: 0,
       size: 0,
       startedAt: null,
     };
-  }, [state.sessions, state.activePath, state.sessionId, state.sessionName]);
+  }, [sessions, activePath, sessionId, sessionName]);
 
   return (
     <header className="relative flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white px-3 sm:px-4 dark:border-zinc-800 dark:bg-zinc-900/80">
@@ -174,7 +177,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
           <span className="ml-2 inline-flex items-center gap-1.5 align-middle text-[11px] font-normal text-emerald-600 dark:text-emerald-400">
             <span className="inline-block size-1.5 animate-pulse rounded-full bg-emerald-500" />
             {t("topbar.streaming")}
-            {state.agentState?.tokensPerSecond ? ` · ${Math.round(state.agentState.tokensPerSecond)} tok/s` : ""}
+            {agentState?.tokensPerSecond ? ` · ${Math.round(agentState.tokensPerSecond)} tok/s` : ""}
           </span>
         )}
       </h1>

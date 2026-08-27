@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Dropdown } from "@heroui/react";
 import { useI18n } from "../i18n";
-import { useStore } from "../state/store";
+import { useActions, useAppStore } from "../state/store";
 import {
   getComposerText,
   setComposerText,
@@ -86,7 +86,10 @@ function PlusMenu({ onPick, disabled }: { onPick: (kind: "file" | "skill" | "ima
 
 export function Composer() {
   const { t } = useI18n();
-  const { state, actions } = useStore();
+  const actions = useActions();
+  const connected = useAppStore((s) => s.connStatus === "connected" && s.agentReady);
+  const stopping = useAppStore((s) => s.stopping);
+  const isStreaming = useAppStore((s) => Boolean(s.agentState?.isStreaming));
   // Composer text is a dedicated external store: typing re-renders only
   // this component instead of every store consumer.
   const composerText = useSyncExternalStore(subscribeComposerText, getComposerText);
@@ -94,7 +97,6 @@ export function Composer() {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const filesCache = useRef<Map<string, string[]>>(new Map());
   const fileFetchSeq = useRef(0);
-  const connected = state.connStatus === "connected" && state.agentReady;
 
   const [mention, setMention] = useState<MentionState | null>(null);
   const [selected, setSelected] = useState(0);
@@ -408,11 +410,11 @@ export function Composer() {
             disabled={!connected}
             className="max-h-[220px] min-h-[38px] flex-1 resize-none bg-transparent px-1 py-2 text-[14.5px] leading-relaxed outline-none placeholder:text-zinc-400 disabled:opacity-50"
           />
-          {state.stopping || state.agentState?.isStreaming ? (
+          {stopping || isStreaming ? (
             <button
               type="button"
               onClick={actions.stop}
-              title={state.stopping ? t("composer.stopping") : t("composer.stop")}
+              title={stopping ? t("composer.stopping") : t("composer.stop")}
               className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-red-600 text-white transition-colors hover:bg-red-500"
             >
               <IconSquare size={12} />

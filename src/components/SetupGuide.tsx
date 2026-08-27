@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useStore } from "../state/store";
+import { useActions, useAppStore } from "../state/store";
 import { useI18n } from "../i18n";
 import { IconCheck, IconCopy } from "./icons";
 
@@ -43,7 +43,8 @@ function InstallRow({ label, command }: { label: string; command: string }) {
 
 /** Blocking setup screen shown when the bridge cannot find the omp binary. */
 export function SetupGuide() {
-  const { state, actions } = useStore();
+  const ompCwd = useAppStore((s) => s.health?.ompCwd) ?? "";
+  const actions = useActions();
   const { t } = useI18n();
   const [checking, setChecking] = useState(false);
   const recheck = async () => {
@@ -68,7 +69,7 @@ export function SetupGuide() {
         <p className="mt-4 text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-300">
           {t("setup.body", {
             omp: "omp",
-            cwd: state.health?.ompCwd || "—",
+            cwd: ompCwd || "—",
             bin: "OMP_BIN",
           })}
         </p>

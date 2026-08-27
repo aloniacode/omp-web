@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { ToolResultMessage } from "../rpc/types";
-import { useStore } from "../state/store";
+import { useAppStore } from "../state/store";
 import { setComposerText } from "../state/composerText";
 import { useI18n } from "../i18n";
 import { MessageView, UserRow, type ChatEntryUser } from "./MessageView";
@@ -55,24 +55,49 @@ function AgentWorkingRow() {
   );
 }
 
+/** Live assistant turn; isolates per-token updates to this subtree only. */
+function StreamingRow({ resultsByCallId }: { resultsByCallId: Map<string, ToolResultMessage> }) {
+  const streamingMsg = useAppStore((s) => s.streamingMsg);
+  if (!streamingMsg) return null;
+  return <MessageView message={streamingMsg} resultsByCallId={resultsByCallId} isStreamingTurn />;
+}
+
+function WorkingRow() {
+  const active = useAppStore((s) => s.awaitingAgent && s.streamingMsg === null && s.toolRuns.length === 0);
+  if (!active) return null;
+  return <AgentWorkingRow />;
+}
+
 export function ChatList() {
-  const { state } = useStore();
+  const messages = useAppStore((s) => s.messages);
+  const hasLiveContent = useAppStore((s) => s.streamingMsg !== null || s.toolRuns.length > 0 || s.awaitingAgent);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
   // Pair committed tool results with their calls for card rendering.
   const resultsByCallId = useMemo(() => {
     const map = new Map<string, ToolResultMessage>();
-    for (const entry of state.messages) {
+    for (const entry of messages) {
       if (entry.role === "toolResult") map.set(entry.toolCallId, entry);
     }
     return map;
-  }, [state.messages]);
+  }, [messages]);
 
+  // Follow-the-bottom scroll driven by a store subscription: streaming tokens
+  // update the DOM without re-rendering the whole committed message list.
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [state.messages, state.streamingMsg, state.toolRuns]);
+    let prev = useAppStore.getState();
+    return useAppStore.subscribe((state) => {
+      const changed =
+        state.messages !== prev.messages ||
+        state.streamingMsg !== prev.streamingMsg ||
+        state.toolRuns !== prev.toolRuns;
+      prev = state;
+      if (!changed) return;
+      const el = scrollRef.current;
+      if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
+    });
+  }, []);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -80,8 +105,7 @@ export function ChatList() {
     stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
   };
 
-  const hasContent =
-    state.messages.length > 0 || state.streamingMsg !== null || state.toolRuns.length > 0;
+  const hasContent = messages.length > 0 || hasLiveContent;
 
   return (
     <ScrollArea className="min-h-0 flex-1" viewportClassName="px-4 py-5 sm:px-6" onScroll={onScroll} viewportRef={scrollRef}>
@@ -89,14 +113,14 @@ export function ChatList() {
         <EmptyState />
       ) : (
         <div className="mx-auto flex max-w-3xl flex-col gap-5">
-          {state.messages.map((entry, index) => {
+          {messages.map((entry, index) => {
             if (entry.role === "user") {
               return <UserRow key={`u${index}`} entry={entry as unknown as ChatEntryUser} />;
             }
             if (entry.role === "assistant") {
               // A new turn begins right after a user message; continuation
               // messages (thinking / tools / answer) render without avatar.
-              const previous = state.messages[index - 1];
+              const previous = messages[index - 1];
               const isTurnStart = index === 0 || previous?.role === "user";
               return (
                 <MessageView
@@ -111,17 +135,8 @@ export function ChatList() {
             return null; // toolResult rows render inside assistant tool cards
           })}
 
-          {state.streamingMsg && (
-            <MessageView
-              message={state.streamingMsg}
-              resultsByCallId={resultsByCallId}
-              isStreamingTurn
-            />
-          )}
-
-          {state.awaitingAgent && !state.streamingMsg && state.toolRuns.length === 0 && (
-            <AgentWorkingRow />
-          )}
+          <StreamingRow resultsByCallId={resultsByCallId} />
+          <WorkingRow />
         </div>
       )}
     </ScrollArea>

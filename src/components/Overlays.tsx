@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useStore } from "../state/store";
+import { useActions, useAppStore } from "../state/store";
 import { useI18n } from "../i18n";
 import type { ExtensionUiRequest } from "../rpc/types";
 import { ModalShell } from "./Sidebar";
@@ -7,14 +7,13 @@ import { IconExternalLink, IconX } from "./icons";
 
 /** Interactive extension UI requests (select/confirm/input/editor/open_url). */
 export function ExtUiDialogs() {
-  const { state } = useStore();
-  const request = state.extStack[state.extStack.length - 1];
+  const request = useAppStore((s) => s.extStack[s.extStack.length - 1]);
   if (!request) return null;
   return <ExtDialog key={request.id} request={request} />;
 }
 
 function ExtDialog({ request }: { request: ExtensionUiRequest }) {
-  const { actions } = useStore();
+  const actions = useActions();
   const { t } = useI18n();
   const close = (outcome: Parameters<typeof actions.respondExtUi>[1]) => actions.respondExtUi(request, outcome);
   const cancel = () => close({ kind: "cancelled" });
@@ -165,10 +164,11 @@ function InputBody({
 // ── Notices / toasts ────────────────────────────────────────────────────────
 
 export function Toasts() {
-  const { state, actions } = useStore();
+  const notices = useAppStore((s) => s.notices);
+  const actions = useActions();
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex w-80 flex-col gap-2">
-      {state.notices.map((notice) => (
+      {notices.map((notice) => (
         <ToastItem key={notice.id} notice={notice} onDismiss={() => actions.dismissNotice(notice.id)} />
       ))}
     </div>

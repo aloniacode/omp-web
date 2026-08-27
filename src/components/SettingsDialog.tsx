@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Dropdown } from "@heroui/react";
 import { useI18n } from "../i18n";
 import { useTheme, ACCENTS, type ThemePref } from "../lib/theme";
-import { useStore } from "../state/store";
+import { useActions, useAppStore } from "../state/store";
 import { THINKING_LEVELS } from "../rpc/types";
 import { IconChevronDown, IconX } from "./icons";
 
@@ -229,8 +229,12 @@ const TAB_LABELS: Record<OmpTab, string> = {
 
 function OmpSettings({ autoRetry, onAutoRetryChange }: { autoRetry: boolean; onAutoRetryChange: (v: boolean) => void }) {
   const { t } = useI18n();
-  const { state, actions } = useStore();
-  const s = state.agentState;
+  const actions = useActions();
+  const s = useAppStore((st) => st.agentState);
+  const agentReady = useAppStore((st) => st.agentReady);
+  const sessionName = useAppStore((st) => st.sessionName);
+  const sessionId = useAppStore((st) => st.sessionId);
+  const activePath = useAppStore((st) => st.activePath);
   const [tab, setTab] = useState<OmpTab>("model");
   const [nameDraft, setNameDraft] = useState<string | null>(null);
 
@@ -336,7 +340,7 @@ function OmpSettings({ autoRetry, onAutoRetryChange }: { autoRetry: boolean; onA
               <button
                 type="button"
                 onClick={() => actions.compact()}
-                disabled={!state.agentReady || Boolean(s?.isCompacting)}
+                disabled={!agentReady || Boolean(s?.isCompacting)}
                 className="rounded-lg border border-zinc-200 px-2.5 py-1 text-[12px] font-medium text-zinc-600 hover:border-accent hover:text-accent disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300"
               >
                 {s?.isCompacting ? t("settings.omp.compacting") : t("settings.omp.compactNow")}
@@ -361,10 +365,10 @@ function OmpSettings({ autoRetry, onAutoRetryChange }: { autoRetry: boolean; onA
         <Section title="Session">
           <Row label={t("settings.omp.sessionName")}>
             <input
-              value={nameDraft ?? state.sessionName ?? ""}
+              value={nameDraft ?? sessionName ?? ""}
               onChange={(e) => setNameDraft(e.target.value)}
               onBlur={() => {
-                if (nameDraft != null && nameDraft.trim() && nameDraft.trim() !== state.sessionName) {
+                if (nameDraft != null && nameDraft.trim() && nameDraft.trim() !== sessionName) {
                   actions.renameSession(nameDraft.trim());
                 }
                 setNameDraft(null);
@@ -377,21 +381,21 @@ function OmpSettings({ autoRetry, onAutoRetryChange }: { autoRetry: boolean; onA
             />
           </Row>
           <Row label={t("settings.omp.sessionId")}>
-            <span className="font-mono text-[12px] text-zinc-500 dark:text-zinc-400">{state.sessionId ?? "—"}</span>
+            <span className="font-mono text-[12px] text-zinc-500 dark:text-zinc-400">{sessionId ?? "—"}</span>
           </Row>
           <Row label={t("settings.omp.sessionFile")}>
             <span
               className="block max-w-52 truncate font-mono text-[11.5px] text-zinc-400 dark:text-zinc-500"
-              title={state.activePath ?? ""}
+              title={activePath ?? ""}
             >
-              {state.activePath ?? "—"}
+              {activePath ?? "—"}
             </span>
           </Row>
           <Row label={t("settings.omp.exportHtml")} hint={t("settings.omp.exportHint")}>
             <button
               type="button"
               onClick={actions.exportHtml}
-              disabled={!state.agentReady}
+              disabled={!agentReady}
               className="rounded-lg border border-zinc-200 px-2.5 py-1 text-[12px] font-medium text-zinc-600 hover:border-accent hover:text-accent disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300"
             >
               {t("settings.omp.exportHtml")}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useStore } from "../state/store";
+import { useActions, useAppStore } from "../state/store";
 import type { SessionMeta } from "../rpc/types";
 import { relTime, truncate } from "../lib/format";
 import { togglePin, usePinned } from "../lib/pins";
@@ -46,7 +46,7 @@ function dateBucket(ms: number): "today" | "yesterday" | "week" | "month" | "old
 
 export function RenameDialog({ target, onClose }: { target: SessionMeta; onClose: () => void }) {
   const { t } = useI18n();
-  const { actions } = useStore();
+  const actions = useActions();
   const [name, setName] = useState(target.title ?? "");
   const save = () => {
     if (name.trim()) actions.renameSession(name.trim());
@@ -74,7 +74,7 @@ export function RenameDialog({ target, onClose }: { target: SessionMeta; onClose
 
 export function DeleteDialog({ target, onClose }: { target: SessionMeta; onClose: () => void }) {
   const { t } = useI18n();
-  const { actions } = useStore();
+  const actions = useActions();
   return (
     <ModalShell onClose={onClose}>
       <h2 className="text-[15px] font-semibold">{t("dialog.deleteTitle")}</h2>
@@ -154,7 +154,7 @@ function SessionItem({
   onDelete: (s: SessionMeta) => void;
 }) {
   const { t } = useI18n();
-  const { actions } = useStore();
+  const actions = useActions();
   const { title, sub } = sessionLabel(session, t("topbar.untitled"), {
     justNow: t("time.justNow"),
     minutesAgo: t("time.minutesAgo"),
@@ -210,7 +210,10 @@ function SessionItem({
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useI18n();
-  const { state, actions } = useStore();
+  const actions = useActions();
+  const sessions = useAppStore((s) => s.sessions);
+  const activePath = useAppStore((s) => s.activePath);
+  const agentReady = useAppStore((s) => s.agentReady);
   const pinned = usePinned();
   const [query, setQuery] = useState("");
   const [groupMode, setGroupMode] = useState<GroupMode>(() =>
@@ -225,11 +228,11 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return state.sessions;
-    return state.sessions.filter(
+    if (!q) return sessions;
+    return sessions.filter(
       (session) => (session.title ?? "").toLowerCase().includes(q) || session.preview.toLowerCase().includes(q),
     );
-  }, [state.sessions, query]);
+  }, [sessions, query]);
 
   const groups = useMemo<SessionGroup[]>(() => {
     const pinnedSet = new Set(pinned);
@@ -310,7 +313,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           <button
             type="button"
             onClick={actions.newChat}
-            disabled={!state.agentReady}
+            disabled={!agentReady}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[13.5px] font-medium text-accent-foreground shadow-sm transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <IconPlus size={15} />
@@ -365,7 +368,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                   <SessionItem
                     key={session.path}
                     session={session}
-                    active={session.path === state.activePath}
+                    active={session.path === activePath}
                     pinned={pinned.includes(session.path)}
                     onRename={setRenaming}
                     onDelete={setDeleting}
@@ -391,9 +394,10 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 
 function ConnectionRow() {
   const { t } = useI18n();
-  const { state } = useStore();
+  const status = useAppStore((s) => s.connStatus);
+  const agentReady = useAppStore((s) => s.agentReady);
+  const ompResolved = useAppStore((s) => s.health?.ompResolved);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const status = state.connStatus;
   const color =
     status === "connected"
       ? "bg-emerald-500"
@@ -404,7 +408,7 @@ function ConnectionRow() {
           : "bg-red-500";
   const label =
     status === "connected"
-      ? state.agentReady
+      ? agentReady
         ? t("status.connected")
         : t("status.starting")
       : status === "reconnecting"
@@ -416,7 +420,7 @@ function ConnectionRow() {
     <div className="flex items-center gap-2 px-1 text-[11.5px] text-zinc-400 dark:text-zinc-500">
       <span className={`size-2 rounded-full ${color} ${status === "reconnecting" ? "animate-pulse" : ""}`} />
       <span className="truncate">{label}</span>
-      {state.health?.ompResolved == null && status !== "closed" && (
+      {ompResolved == null && status !== "closed" && (
         <span className="ml-auto truncate text-amber-500" title={t("status.ompTooltip")}>
           {t("status.ompMissing")}
         </span>
@@ -427,7 +431,7 @@ function ConnectionRow() {
         title={t("topbar.settings")}
         aria-label={t("topbar.settings")}
         className={`rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 ${
-          state.health?.ompResolved == null && status !== "closed" ? "" : "ml-auto"
+          ompResolved == null && status !== "closed" ? "" : "ml-auto"
         }`}
       >
         <IconSettings size={14} />
