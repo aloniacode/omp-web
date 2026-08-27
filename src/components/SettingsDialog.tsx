@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Dropdown } from "@heroui/react";
 import { useI18n } from "../i18n";
 import { useTheme, ACCENTS, type ThemePref } from "../lib/theme";
@@ -12,7 +13,11 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const [tab, setTab] = useState<"web" | "omp">("web");
   const [autoRetry, setAutoRetry] = useState(false);
   if (!open) return null;
-  return (
+  // Portal to body: rendered inside the sidebar, whose slide-in `translate`
+  // (kept for the mobile animation via md:translate-x-0) forms the containing
+  // block for fixed children — anchoring this viewport modal to the sidebar
+  // box instead of the viewport.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]"
       onMouseDown={(e) => {
@@ -53,7 +58,8 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
           {tab === "web" ? <WebSettings /> : <OmpSettings autoRetry={autoRetry} onAutoRetryChange={setAutoRetry} />}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
