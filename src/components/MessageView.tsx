@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { Disclosure } from "@heroui/react";
 import type {
   AssistantMessage,
   ImageContent,
@@ -12,12 +13,7 @@ import { fmtCost, fmtTokPerSec, fmtTokens, truncate, userText } from "../lib/for
 import { useI18n } from "../i18n";
 import { Markdown } from "./Markdown";
 import { useAppStore } from "../state/store";
-import {
-  IconBot,
-  IconCheck,
-  IconChevronDown,
-  IconChevronRight,
-} from "./icons";
+import { IconBot, IconCheck } from "./icons";
 
 // ── Collapsible shell ───────────────────────────────────────────────────────
 
@@ -32,7 +28,6 @@ function Collapsible({
   tone?: "neutral" | "dim" | "error";
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   const toneClass =
     tone === "error"
       ? "border-red-300/60 bg-red-50 dark:border-red-500/40 dark:bg-red-950/30"
@@ -40,17 +35,13 @@ function Collapsible({
         ? "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60"
         : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900";
   return (
-    <div className={`overflow-hidden rounded-xl border ${toneClass}`}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-      >
-        {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+    <Disclosure defaultExpanded={defaultOpen} className={`overflow-hidden rounded-xl border ${toneClass}`}>
+      <Disclosure.Trigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">
+        <Disclosure.Indicator className="shrink-0 text-zinc-400" />
         <span className="min-w-0 flex-1 truncate">{title}</span>
-      </button>
-      {open && <div className="px-3 pb-3">{children}</div>}
-    </div>
+      </Disclosure.Trigger>
+      <Disclosure.Content className="px-3 pb-3">{children}</Disclosure.Content>
+    </Disclosure>
   );
 }
 

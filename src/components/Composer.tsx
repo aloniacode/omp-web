@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Dropdown } from "@heroui/react";
+import { Button, Dropdown } from "@heroui/react";
 import { useI18n } from "../i18n";
 import { useActions, useAppStore } from "../state/store";
 import {
@@ -393,9 +393,10 @@ export function Composer() {
           </div>
         )}
 
-        {/* Input block: plus | textarea | send — centered card matching the chat column */}
-        <div className="flex items-end gap-2 rounded-2xl border border-zinc-300 bg-white p-2 shadow-md transition-colors focus-within:border-accent dark:border-zinc-700 dark:bg-zinc-900">
-          <PlusMenu onPick={onPlusPick} disabled={!connected} />
+        {/* Input block: textarea on its own row; controls (plus, project,
+            model, send) share one bottom bar — centered card matching the
+            chat column */}
+        <div className="flex flex-col rounded-2xl border border-zinc-300 bg-white p-2 shadow-md transition-colors focus-within:border-accent dark:border-zinc-700 dark:bg-zinc-900">
           <textarea
             ref={textareaRef}
             rows={1}
@@ -408,34 +409,32 @@ export function Composer() {
             }}
             placeholder={connected ? t("composer.placeholder") : t("composer.placeholderWaiting")}
             disabled={!connected}
-            className="max-h-[220px] min-h-[38px] flex-1 resize-none bg-transparent px-1 py-2 text-[14.5px] leading-relaxed outline-none placeholder:text-zinc-400 disabled:opacity-50"
+            className="max-h-[220px] min-h-[38px] w-full resize-none bg-transparent px-1.5 py-2 text-[14.5px] leading-relaxed outline-none placeholder:text-zinc-400 disabled:opacity-50"
           />
-          {stopping || isStreaming ? (
-            <button
-              type="button"
-              onClick={actions.stop}
-              title={stopping ? t("composer.stopping") : t("composer.stop")}
-              className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-red-600 text-white transition-colors hover:bg-red-500"
-            >
-              <IconSquare size={12} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={submit}
-              disabled={(!composerText.trim() && attachments.length === 0) || !connected}
-              title={t("composer.send")}
-              className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <IconSend size={15} />
-            </button>
-          )}
-        </div>
-
-        {/* Toolbar blocks: project / model / thinking */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 px-1">
-          <ProjectPicker />
-          <ModelPicker compact />
+          <div className="flex items-center gap-1 pt-1">
+            <PlusMenu onPick={onPlusPick} disabled={!connected} />
+            <ProjectPicker />
+            <ModelPicker compact />
+            <div className="min-w-0 flex-1" />
+            {stopping || isStreaming ? (
+              <Button
+                onPress={actions.stop}
+                aria-label={stopping ? t("composer.stopping") : t("composer.stop")}
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-red-600 text-white transition-colors hover:bg-red-500"
+              >
+                <IconSquare size={12} />
+              </Button>
+            ) : (
+              <Button
+                onPress={submit}
+                isDisabled={(!composerText.trim() && attachments.length === 0) || !connected}
+                aria-label={t("composer.send")}
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <IconSend size={15} />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>
