@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { Dropdown } from "@heroui/react";
 import { useI18n } from "../i18n";
 import { useStore } from "../state/store";
 import type { ImageContent } from "../rpc/types";
 import { ModelPicker } from "./pickers";
-import { IconAtSign, IconImage, IconPaperclip, IconSend, IconSquare, IconX, IconZap } from "./icons";
+import { IconAtSign, IconImage, IconPlus, IconSend, IconSquare, IconX, IconZap } from "./icons";
 
 interface MentionState {
   kind: "file" | "skill";
@@ -35,50 +36,46 @@ function readImage(file: File): Promise<Attachment> {
   });
 }
 
-function PlusMenu({ onPick, disabled }: { onPick: (kind: "file" | "image") => void; disabled: boolean }) {
+/** Plus menu: unified entry for file references, skills and image attachments. */
+function PlusMenu({ onPick, disabled }: { onPick: (kind: "file" | "skill" | "image") => void; disabled: boolean }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title={t("composer.attach")}
-        disabled={disabled}
-        className="flex size-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+    <Dropdown>
+      <Dropdown.Trigger
+        isDisabled={disabled}
+        aria-label={t("composer.attach")}
+        className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
       >
-        <IconPaperclip size={15} />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 z-30 mb-2 w-40 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onPick("file");
-              }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-zinc-700 hover:bg-accent/10 hover:text-accent dark:text-zinc-200"
-            >
-              <IconPaperclip size={13} />
-              {t("composer.attachFile")}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onPick("image");
-              }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-zinc-700 hover:bg-accent/10 hover:text-accent dark:text-zinc-200"
-            >
-              <IconImage size={13} />
+        <IconPlus size={15} />
+      </Dropdown.Trigger>
+      <Dropdown.Popover placement="top start">
+        <Dropdown.Menu
+          onAction={(key) => {
+            const kind = String(key);
+            if (kind === "file" || kind === "skill" || kind === "image") onPick(kind);
+          }}
+        >
+          <Dropdown.Item key="file" id="file" textValue={t("composer.fileRef")}>
+            <span className="flex items-center gap-2 text-[13px]">
+              <IconAtSign size={13} className="shrink-0 text-zinc-400" />
+              {t("composer.fileRef")}
+            </span>
+          </Dropdown.Item>
+          <Dropdown.Item key="skill" id="skill" textValue={t("composer.skillsRef")}>
+            <span className="flex items-center gap-2 text-[13px]">
+              <IconZap size={13} className="shrink-0 text-zinc-400" />
+              {t("composer.skillsRef")}
+            </span>
+          </Dropdown.Item>
+          <Dropdown.Item key="image" id="image" textValue={t("composer.attachImage")}>
+            <span className="flex items-center gap-2 text-[13px]">
+              <IconImage size={13} className="shrink-0 text-zinc-400" />
               {t("composer.attachImage")}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+            </span>
+          </Dropdown.Item>
+        </Dropdown.Menu>
+      </Dropdown.Popover>
+    </Dropdown>
   );
 }
 
@@ -244,12 +241,12 @@ export function Composer() {
     });
   };
 
-  const onPlusPick = (kind: "file" | "image") => {
-    if (kind === "file") {
-      openPicker("file");
-    } else {
+  const onPlusPick = (kind: "file" | "skill" | "image") => {
+    if (kind === "image") {
       imageInputRef.current?.click();
+      return;
     }
+    openPicker(kind);
   };
 
   const onImagesPicked = async (files: FileList | null) => {
@@ -385,29 +382,8 @@ export function Composer() {
           )}
         </div>
 
-        {/* Toolbar blocks: refs | model/thinking */}
+        {/* Toolbar blocks: model/thinking */}
         <div className="mt-1.5 flex flex-wrap items-center gap-2 px-1">
-          <button
-            type="button"
-            onClick={() => openPicker("file")}
-            disabled={!connected}
-            title={t("composer.fileRef")}
-            className="flex h-7 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-[11.5px] font-medium text-zinc-500 transition-colors hover:border-accent hover:text-accent disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
-          >
-            <IconAtSign size={12} />
-            @
-          </button>
-          <button
-            type="button"
-            onClick={() => openPicker("skill")}
-            disabled={!connected}
-            title={t("composer.skillsRef")}
-            className="flex h-7 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-[11.5px] font-medium text-zinc-500 transition-colors hover:border-accent hover:text-accent disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
-          >
-            <IconZap size={12} />
-            /
-          </button>
-
           <ModelPicker compact />
         </div>
         <p className="mt-1 text-center text-[11px] text-zinc-400 dark:text-zinc-500">{t("composer.hint")}</p>
