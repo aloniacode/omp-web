@@ -5,7 +5,7 @@ import { useStore } from "../state/store";
 import { useI18n } from "../i18n";
 import type { ModelInfo } from "../rpc/types";
 import { THINKING_LEVELS } from "../rpc/types";
-import { IconChevronDown } from "./icons";
+import { IconChevronDown, IconFolder } from "./icons";
 
 /**
  * Dropdown.Section passes props through to react-aria's MenuSection, whose
@@ -80,6 +80,64 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
               </Dropdown.Item>
             ))}
           </MenuSection>
+        </Dropdown.Menu>
+      </Dropdown.Popover>
+    </Dropdown>
+  );
+}
+
+function dirName(cwd: string): string {
+  const trimmed = cwd.replace(/[\\/]+$/, "");
+  const base = trimmed.split(/[\\/]/).pop() ?? trimmed;
+  return base || trimmed;
+}
+
+/**
+ * Project directory switcher (/api/projects → /api/cwd). Switching disposes
+ * the agent child bridge-side; the client reconnects into the new cwd.
+ */
+export function ProjectPicker() {
+  const { state, actions } = useStore();
+  const { t } = useI18n();
+  const current = state.projectCwd ?? state.health?.ompCwd ?? "";
+  return (
+    <Dropdown>
+      <Dropdown.Trigger
+        aria-label={t("picker.project")}
+        className="flex h-7 max-w-[200px] min-w-0 items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+      >
+        <IconFolder size={13} className="shrink-0 opacity-60" />
+        <span className="truncate">{current ? dirName(current) : t("picker.project")}</span>
+        <IconChevronDown size={13} className="shrink-0 opacity-50" />
+      </Dropdown.Trigger>
+      <Dropdown.Popover placement="top start">
+        <Dropdown.Menu
+          onAction={(key) => {
+            const project = state.projects[Number(key)];
+            if (project && project.cwd !== current) actions.switchProject(project.cwd);
+          }}
+          className="max-h-72 overflow-y-auto"
+        >
+          {state.projects.map((project, index) => (
+            <Dropdown.Item key={String(index)} id={String(index)} textValue={project.cwd}>
+              <span className="flex min-w-0 items-center justify-between gap-4">
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate text-[12.5px]">{dirName(project.cwd)}</span>
+                  <span className="truncate font-mono text-[10.5px] text-zinc-400">{project.cwd}</span>
+                </span>
+                {project.cwd === current ? (
+                  <span className="shrink-0 text-accent">●</span>
+                ) : project.sessions > 0 ? (
+                  <span className="shrink-0 text-[10.5px] text-zinc-400">{project.sessions}</span>
+                ) : null}
+              </span>
+            </Dropdown.Item>
+          ))}
+          {state.projects.length === 0 && (
+            <Dropdown.Item key="loading" id="loading" textValue="loading projects" isDisabled>
+              {t("picker.noProjects")}
+            </Dropdown.Item>
+          )}
         </Dropdown.Menu>
       </Dropdown.Popover>
     </Dropdown>

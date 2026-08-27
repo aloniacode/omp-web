@@ -18,6 +18,7 @@ import type {
   ExtensionUiRequest,
   ModelInfo,
   NoticeFrame,
+  ProjectInfo,
   RpcFrame,
   RpcResponseFrame,
   RpcSessionState,
@@ -79,6 +80,10 @@ export interface AppState {
   agentState: RpcSessionState | null;
   stats: SessionStats | null;
   models: ModelInfo[];
+  /** Known agent working directories, aggregated by the bridge. */
+  projects: ProjectInfo[];
+  /** Current agent working directory (bridge-side, switchable). */
+  projectCwd: string | null;
   notices: UiNotice[];
   extStack: ExtensionUiRequest[];
   composerText: string;
@@ -103,6 +108,8 @@ export interface StoreActions {
   refreshSessions(): void;
   setModel(provider: string, modelId: string): void;
   setThinkingLevel(level: string): void;
+  refreshProjects(): void;
+  switchProject(cwd: string): void;
   setFastMode(enabled: boolean): void;
   setSteeringMode(mode: "all" | "one-at-a-time"): void;
   setFollowUpMode(mode: "all" | "one-at-a-time"): void;
@@ -133,6 +140,8 @@ const initialState: AppState = {
   stats: null,
   models: [],
   modelsLoaded: false,
+  projects: [],
+  projectCwd: null,
   notices: [],
   extStack: [],
   composerText: "",
@@ -148,6 +157,8 @@ type Action =
   | { type: "agent_state"; state: RpcSessionState }
   | { type: "stats"; stats: SessionStats }
   | { type: "models"; models: ModelInfo[] }
+  | { type: "projects"; projects: ProjectInfo[]; current: string | null }
+  | { type: "project_cwd"; cwd: string }
   | { type: "messages"; messages: ChatEntry[] }
   | { type: "append_entry"; entry: ChatEntry }
   | { type: "patch_pending"; failed: boolean }
@@ -170,8 +181,16 @@ function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case "conn_status":
       // Fresh child process after every reconnect until `agent_ready`.
+      // projects/projectCwd come from the bridge (not the agent child), so
+      // they survive the reset; they are re-synced on `ready`.
       return action.status === "connected"
-        ? { ...initialState, connStatus: action.status, health: state.health }
+        ? {
+            ...initialState,
+            connStatus: action.status,
+            health: state.health,
+            projects: state.projects,
+            projectCwd: state.projectCwd,
+          }
         : { ...state, connStatus: action.status };
     case "agent_ready":
       return { ...state, agentReady: true };
@@ -194,6 +213,10 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, stats: action.stats };
     case "models":
       return { ...state, models: action.models, modelsLoaded: true };
+    case "projects":
+      return { ...state, projects: action.projects, projectCwd: action.current ?? state.projectCwd };
+    case "project_cwd":
+      return { ...state, projectCwd: action.cwd };
     case "messages":
       return { ...state, messages: action.messages };
     case "append_entry":
@@ -302,6 +325,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .catch(() => undefined);
   }, []);
 
+  const refreshProjects = useCallback(() => {
+    fetch("/api/projects")
+      .then((res) => res.json())
+      .then((body: { projects?: ProjectInfo[]; current?: string }) => {
+        if (Array.isArray(body.projects)) {
+          dispatch({ type: "projects", projects: body.projects, current: body.current ?? null });
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
   const applyAgentState = useCallback((data: RpcSessionState) => dispatch({ type: "agent_state", state: data }), []);
 
   const loadAllMessages = useCallback(async (): Promise<ChatEntry[]> => {
@@ -351,6 +385,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           dispatch({ type: "agent_ready" });
           void initSession();
           refreshSessions();
+          refreshProjects();
           break;
 
         case "agent_end": {
@@ -365,6 +400,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           void client.request({ type: "get_session_stats" });
           void client.request({ type: "get_state" });
           refreshSessions();
+          refreshProjects();
           break;
         }
 
@@ -554,11 +590,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => undefined);
     refreshSessions();
+    refreshProjects();
     return () => {
       unsubFrames();
       unsubStatus();
     };
-  }, [refreshSessions]);
+  }, [refreshSessions, refreshProjects]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -653,6 +690,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           .catch((err: unknown) => fail(err, "thinking level"));
       },
 
+      refreshProjects,
+
+      switchProject(cwd: string) {
+        fetch("/api/cwd", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ cwd }),
+        })
+          .then(async (res) => {
+            const body = (await res.json().catch(() => ({}))) as { ok?: boolean; cwd?: string; changed?: boolean; error?: string };
+            if (!res.ok || !body.ok) throw new Error(body.error ?? `switch failed (${res.status})`);
+            dispatch({ type: "project_cwd", cwd: body.cwd ?? cwd });
+            if (body.changed) {
+              // Bridge disposed the agent child; the socket drops and the
+              // retry loop respawns it in the new directory.
+              addNotice("info", storeT("notice.projectSwitched", { cwd: body.cwd ?? cwd }));
+            }
+            refreshProjects();
+            refreshSessions();
+          })
+          .catch((err: unknown) => fail(err, "switch project"));
+      },
+
       respondExtUi(request: ExtensionUiRequest, outcome: ExtOutcome) {
         dispatch({ type: "pop_ext_ui", id: request.id });
         if (outcome.kind === "dismissed") return;
@@ -736,7 +796,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       },
     };
-  }, [addNotice, refreshSessions]);
+  }, [addNotice, refreshSessions, refreshProjects]);
 
   const value = useMemo<StoreValue>(() => ({ state, actions }), [state, actions]);
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

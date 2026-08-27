@@ -4,7 +4,7 @@ import { Dropdown } from "@heroui/react";
 import { useI18n } from "../i18n";
 import { useStore } from "../state/store";
 import type { ImageContent } from "../rpc/types";
-import { ModelPicker } from "./pickers";
+import { ModelPicker, ProjectPicker } from "./pickers";
 import { IconAtSign, IconImage, IconPlus, IconSend, IconSquare, IconX, IconZap } from "./icons";
 
 interface MentionState {
@@ -422,8 +422,9 @@ export function Composer() {
           )}
         </div>
 
-        {/* Toolbar blocks: model/thinking */}
+        {/* Toolbar blocks: project / model / thinking */}
         <div className="mt-1.5 flex flex-wrap items-center gap-2 px-1">
+          <ProjectPicker />
           <ModelPicker compact />
         </div>
         <p className="mt-1 text-center text-[11px] text-zinc-400 dark:text-zinc-500">

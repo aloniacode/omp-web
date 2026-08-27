@@ -28,7 +28,8 @@ const EXTRA_OMP_ARGS = process.env.OMP_ARGS ? process.env.OMP_ARGS.split(" ").fi
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const OMP_BIN = process.env.OMP_BIN ?? "omp";
-const OMP_CWD = process.env.OMP_CWD ?? process.cwd();
+/** Agent working directory; switchable at runtime via POST /api/cwd. */
+let ompCwd = process.env.OMP_CWD ?? process.cwd();
 const DIST_DIR = path.join(__dirname, "..", "dist");
 const MAX_LINE_BYTES = 128 * 1024 * 1024;
 
@@ -78,7 +79,7 @@ async function searchFiles(query, limit = 24) {
       }
     }
   }
-  await walk(OMP_CWD, "", 0);
+  await walk(ompCwd, "", 0);
   return results;
 }
 
@@ -86,7 +87,7 @@ async function searchFiles(query, limit = 24) {
 async function listSkills() {
   const roots = [
     { dir: path.join(os.homedir(), ".omp", "agent", "skills"), source: "global" },
-    { dir: path.join(OMP_CWD, ".omp", "skills"), source: "project" },
+    { dir: path.join(ompCwd, ".omp", "skills"), source: "project" },
   ];
   const out = [];
   for (const { dir, source } of roots) {
@@ -118,7 +119,7 @@ async function listSkills() {
 }
 
 function isBucketForCwd(bucketName) {
-  return bucketNamesForCwd(OMP_CWD).has(bucketName);
+  return bucketNamesForCwd(ompCwd).has(bucketName);
 }
 
 async function listSessions({ limit = 50, scope = "all" } = {}) {
@@ -200,7 +201,7 @@ class RpcChild {
     this.stderrTail = [];
 
     this.child = spawn(OMP_BIN, ["--mode", "rpc", "--continue", ...EXTRA_OMP_ARGS], {
-      cwd: OMP_CWD,
+      cwd: ompCwd,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
@@ -356,7 +357,7 @@ const server = http.createServer(async (req, res) => {
       const found = whichOmp();
       return sendJson(res, 200, {
         ok: true,
-        omp: { bin: OMP_BIN, resolved: found, cwd: OMP_CWD },
+        omp: { bin: OMP_BIN, resolved: found, cwd: ompCwd },
       });
     }
     if (url.pathname === "/api/files" && req.method === "GET") {
@@ -376,6 +377,42 @@ const server = http.createServer(async (req, res) => {
       const target = url.searchParams.get("path") ?? (await readJsonBody(req)).path;
       if (!target) return sendJson(res, 400, { error: "missing path" });
       return sendJson(res, 200, await deleteSessionFile(target));
+    }
+    if (url.pathname === "/api/projects" && req.method === "GET") {
+      // Distinct session cwds, plus the current working directory.
+      const sessions = await listSessions({ limit: 200 });
+      const byCwd = new Map();
+      for (const session of sessions) {
+        if (!session.cwd) continue;
+        const entry = byCwd.get(session.cwd) ?? { cwd: session.cwd, sessions: 0, lastUsedMs: 0 };
+        entry.sessions += 1;
+        entry.lastUsedMs = Math.max(entry.lastUsedMs, session.mtimeMs);
+        byCwd.set(session.cwd, entry);
+      }
+      const projects = [...byCwd.values()].sort((a, b) => b.lastUsedMs - a.lastUsedMs);
+      if (![...byCwd.keys()].some((cwd) => path.resolve(cwd) === path.resolve(ompCwd))) {
+        projects.unshift({ cwd: ompCwd, sessions: 0, lastUsedMs: 0 });
+      }
+      return sendJson(res, 200, { projects, current: ompCwd });
+    }
+    if (url.pathname === "/api/cwd" && req.method === "POST") {
+      const body = await readJsonBody(req);
+      const cwd = typeof body.cwd === "string" ? path.resolve(body.cwd) : "";
+      if (!cwd) return sendJson(res, 400, { error: "missing cwd" });
+      let stat;
+      try {
+        stat = await fsp.stat(cwd);
+      } catch {
+        return sendJson(res, 400, { error: `directory not found: ${cwd}` });
+      }
+      if (!stat.isDirectory()) return sendJson(res, 400, { error: `not a directory: ${cwd}` });
+      if (path.resolve(ompCwd) === cwd) return sendJson(res, 200, { ok: true, cwd: ompCwd, changed: false });
+      ompCwd = cwd;
+      // Dispose agent children so the browser's reconnect respawns them in
+      // the new project directory.
+      for (const child of children) child.dispose(true);
+      console.log(`[bridge] cwd switched to ${ompCwd}`);
+      return sendJson(res, 200, { ok: true, cwd: ompCwd, changed: true });
     }
     if (url.pathname.startsWith("/api/")) {
       return sendJson(res, 404, { error: "unknown endpoint" });
@@ -475,7 +512,7 @@ wss.on("connection", (ws) => {
 server.listen(PORT, HOST, () => {
   console.log(`[bridge] listening on http://${HOST}:${PORT}`);
   console.log(`[bridge] omp binary: ${whichOmp() ?? `"${OMP_BIN}" (not found on PATH)`}`);
-  console.log(`[bridge] agent cwd:  ${OMP_CWD}`);
+  console.log(`[bridge] agent cwd:  ${ompCwd}`);
 });
 
 for (const sig of ["SIGINT", "SIGTERM"]) {

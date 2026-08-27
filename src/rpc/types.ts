@@ -410,3 +410,10 @@ export interface SessionMeta {
   size: number;
   startedAt: string | null;
 }
+
+/** Known agent working directory, aggregated from session files. */
+export interface ProjectInfo {
+  cwd: string;
+  sessions: number;
+  lastUsedMs: number;
+}
