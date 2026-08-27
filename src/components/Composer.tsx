@@ -3,7 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useI18n } from "../i18n";
 import { useStore } from "../state/store";
 import type { ImageContent } from "../rpc/types";
-import { ModelPicker, ThinkingPicker } from "./pickers";
+import { ModelPicker } from "./pickers";
 import { IconAtSign, IconImage, IconPaperclip, IconSend, IconSquare, IconX, IconZap } from "./icons";
 
 interface MentionState {
@@ -409,7 +409,6 @@ export function Composer() {
           </button>
 
           <ModelPicker compact />
-          <ThinkingPicker compact />
         </div>
         <p className="mt-1 text-center text-[11px] text-zinc-400 dark:text-zinc-500">{t("composer.hint")}</p>
       </div>
