@@ -427,11 +427,6 @@ export function Composer() {
           <ProjectPicker />
           <ModelPicker compact />
         </div>
-        <p className="mt-1 text-center text-[11px] text-zinc-400 dark:text-zinc-500">
-          {t("composer.hint")}
-          <span className="mx-1.5 text-zinc-300 dark:text-zinc-600">·</span>
-          {t("composer.slashHint")}
-        </p>
       </div>
     </div>
   );
