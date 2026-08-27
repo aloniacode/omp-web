@@ -19,13 +19,12 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
   const models = state.models.slice(0, 400);
   return (
     <Dropdown>
-      <button
-        type="button"
+      <Dropdown.Trigger
         className={`flex ${compact ? "h-7 max-w-[190px]" : "h-8 max-w-[220px]"} min-w-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 text-[12.5px] font-medium text-zinc-700 hover:border-accent dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200`}
       >
         <span className="truncate">{modelLabel(current)}</span>
         <IconChevronDown size={13} className="shrink-0 opacity-50" />
-      </button>
+      </Dropdown.Trigger>
       <Dropdown.Popover>
         <Dropdown.Menu
           onAction={(key) => {
@@ -61,14 +60,13 @@ export function ThinkingPicker({ compact = false }: { compact?: boolean }) {
   const current = state.agentState?.thinkingLevel;
   return (
     <Dropdown>
-      <button
-        type="button"
+      <Dropdown.Trigger
         className={`flex ${compact ? "h-7" : "h-8"} items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 text-[12.5px] font-medium capitalize text-zinc-700 hover:border-accent dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200`}
       >
         <IconBrain size={14} className="text-accent/80" />
         <span className="capitalize">{current ?? "thinking"}</span>
         <IconChevronDown size={13} className="shrink-0 opacity-50" />
-      </button>
+      </Dropdown.Trigger>
       <Dropdown.Popover>
         <Dropdown.Menu onAction={(key) => actions.setThinkingLevel(String(key))}>
           {THINKING_LEVELS.map((level) => (

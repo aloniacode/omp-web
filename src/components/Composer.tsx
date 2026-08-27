@@ -271,7 +271,7 @@ export function Composer() {
   const context = state.stats?.contextUsage ?? state.agentState?.contextUsage;
 
   return (
-    <div className="shrink-0 border-t border-zinc-200 bg-white px-3 pb-2.5 pt-2 sm:px-6 dark:border-zinc-800 dark:bg-zinc-900/80">
+    <div className="shrink-0 px-4 pb-4 pt-1 sm:px-6">
       <div className="relative mx-auto max-w-3xl">
         {/* Mention popup */}
         {mention && (
@@ -350,8 +350,8 @@ export function Composer() {
           </div>
         )}
 
-        {/* Input block: plus | textarea | send — each its own bordered block */}
-        <div className="flex items-end gap-2 rounded-2xl border border-zinc-300 bg-white p-2 shadow-sm transition-colors focus-within:border-accent dark:border-zinc-700 dark:bg-zinc-900">
+        {/* Input block: plus | textarea | send — centered card matching the chat column */}
+        <div className="flex items-end gap-2 rounded-2xl border border-zinc-300 bg-white p-2 shadow-md transition-colors focus-within:border-accent dark:border-zinc-700 dark:bg-zinc-900">
           <PlusMenu onPick={onPlusPick} disabled={!connected} />
           <textarea
             ref={textareaRef}

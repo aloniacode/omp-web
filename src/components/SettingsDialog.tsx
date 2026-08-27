@@ -111,13 +111,12 @@ function Select({ value, options, onChange }: {
   const current = options.find((o) => o.id === value);
   return (
     <Dropdown>
-      <button
-        type="button"
+      <Dropdown.Trigger
         className="flex min-w-32 items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[12.5px] font-medium text-zinc-700 hover:border-accent dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
       >
         <span className="truncate">{current?.label ?? "—"}</span>
         <IconChevronDown size={13} className="shrink-0 opacity-50" />
-      </button>
+      </Dropdown.Trigger>
       <Dropdown.Popover>
         <Dropdown.Menu onAction={(key) => onChange(String(key))}>
           {options.map((option) => (
@@ -217,7 +216,7 @@ function WebSettings() {
 
 // ── OMP settings (mirrors omp TUI /settings tabs and groups) ───────────────
 
-const OMP_TABS = ["model", "interaction", "context", "providers"] as const;
+const OMP_TABS = ["model", "interaction", "context", "providers", "session"] as const;
 type OmpTab = (typeof OMP_TABS)[number];
 
 const TAB_LABELS: Record<OmpTab, string> = {
@@ -225,6 +224,7 @@ const TAB_LABELS: Record<OmpTab, string> = {
   interaction: "Interaction",
   context: "Context",
   providers: "Providers",
+  session: "Session",
 };
 
 function OmpSettings({ autoRetry, onAutoRetryChange }: { autoRetry: boolean; onAutoRetryChange: (v: boolean) => void }) {
@@ -357,6 +357,7 @@ function OmpSettings({ autoRetry, onAutoRetryChange }: { autoRetry: boolean; onA
           </Section>
         )}
 
+        {tab === "session" && (
         <Section title="Session">
           <Row label={t("settings.omp.sessionName")}>
             <input
@@ -397,6 +398,7 @@ function OmpSettings({ autoRetry, onAutoRetryChange }: { autoRetry: boolean; onA
             </button>
           </Row>
         </Section>
+        )}
       </div>
     </div>
   );
