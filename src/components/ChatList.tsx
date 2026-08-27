@@ -4,7 +4,7 @@ import { useAppStore } from "../state/store";
 import { setComposerText } from "../state/composerText";
 import { useI18n } from "../i18n";
 import { MessageView, UserRow, type ChatEntryUser } from "./MessageView";
-import { IconBot } from "./icons";
+import { Bot as IconBot } from "lucide-react";
 import { ScrollArea } from "./ScrollArea";
 
 const SUGGESTION_KEYS = ["chat.suggestion.1", "chat.suggestion.2", "chat.suggestion.3"] as const;

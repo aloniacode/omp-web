@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { Dropdown, Slider } from "@heroui/react";
 import { useShallow } from "zustand/react/shallow";
+import { ArrowUp as IconArrowUp, ChevronDown as IconChevronDown, Folder as IconFolder } from "lucide-react";
 
 import { useActions, useAppStore } from "../state/store";
 import { useI18n } from "../i18n";
 import type { ModelInfo } from "../rpc/types";
 import { THINKING_LEVELS } from "../rpc/types";
-import { IconArrowUp, IconChevronDown, IconFolder } from "./icons";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Slider } from "./ui/slider";
 
 export function modelLabel(model: ModelInfo | undefined): string {
   if (!model) return "model";
@@ -18,9 +19,9 @@ export function modelLabel(model: ModelInfo | undefined): string {
  *
  * Dragging is purely local (zero RPC, zero store traffic — that was the
  * source of the jank: every intermediate step fired a `set_thinking_level`
- * round-trip through the agent). The level is committed once on release via
- * `onChangeEnd`; the local drag value hands over to the store value once the
- * agent confirms it.
+ * round-trip through the agent). The level commits once on release via
+ * `onValueCommit`; the local drag value hands over to the store value once
+ * the agent confirms it.
  */
 function ThinkingSlider({ levelIndex, onCommit }: { levelIndex: number; onCommit: (index: number) => void }) {
   const { t } = useI18n();
@@ -34,53 +35,55 @@ function ThinkingSlider({ levelIndex, onCommit }: { levelIndex: number; onCommit
   }, [levelIndex]);
 
   return (
-    <Slider
-      aria-label={t("picker.thinking")}
-      minValue={0}
-      maxValue={maxIndex}
-      step={1}
-      value={activeIndex}
-      onChange={(value) => setDragIndex(Math.round(Array.isArray(value) ? value[0] : value))}
-      onChangeEnd={(value) => onCommit(Math.round(Array.isArray(value) ? value[0] : value))}
-      className="w-56 outline-none"
-    >
+    <div className="w-56 outline-none">
       <div className="mb-2.5 flex items-baseline justify-between">
         <span className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
           {t("picker.thinking")}
         </span>
         <span className="font-mono text-[11px] font-medium text-accent">{THINKING_LEVELS[activeIndex]}</span>
       </div>
-      <Slider.Track className="relative h-4 w-full cursor-pointer touch-none">
-        {/* rail */}
-        <span className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-zinc-200 dark:bg-zinc-700" />
-        {/* gradient fill */}
-        <Slider.Fill className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-gradient-to-r from-accent/60 to-accent" />
+      <div className="relative h-4 w-full">
+        {/* rail (below the slider) */}
+        <span className="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+        <Slider
+          aria-label={t("picker.thinking")}
+          min={0}
+          max={maxIndex}
+          step={1}
+          value={[activeIndex]}
+          onValueChange={(value) => setDragIndex(Math.round(value[0] ?? 0))}
+          onValueCommit={(value) => onCommit(Math.round(value[0] ?? 0))}
+          className="absolute inset-0 h-4 cursor-pointer"
+          // Ticks are rendered above the (transparent-track) slider.
+          trackClassName="h-4 overflow-visible bg-transparent"
+          rangeClassName="top-1/2 h-1 -translate-y-1/2 rounded-full bg-gradient-to-r from-accent/60 to-accent"
+          thumbClassName="top-1/2 size-3.5 -translate-y-1/2 rounded-full border-2 border-accent bg-white shadow-sm transition-transform duration-150 hover:scale-110 active:scale-95 dark:bg-zinc-900"
+        />
         {/* step ticks: lit up to the active step, dim beyond */}
         {THINKING_LEVELS.map((level, i) => (
           <span
             key={level}
             style={{ left: `${(i / maxIndex) * 100}%` }}
-            className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full transition-all duration-200 ${
+            className={`pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full transition-all duration-200 ${
               i <= activeIndex
                 ? "size-[5px] bg-accent-foreground/90 dark:bg-zinc-950"
                 : "size-[4px] bg-zinc-400/80 dark:bg-zinc-600"
             } ${i === activeIndex ? "ring-2 ring-accent/25" : ""}`}
           />
         ))}
-        <Slider.Thumb className="top-1/2 size-3.5 -translate-y-1/2 rounded-full border-2 border-accent bg-white shadow-sm outline-none transition-transform duration-150 hover:scale-110 focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-95 dark:bg-zinc-900" />
-      </Slider.Track>
+      </div>
       <div className="mt-1.5 flex justify-between font-mono text-[9.5px] uppercase tracking-wider text-zinc-400/80">
         <span>{THINKING_LEVELS[0]}</span>
         <span>{THINKING_LEVELS[maxIndex]}</span>
       </div>
-    </Slider>
+    </div>
   );
 }
 
 /**
  * Model switcher with a thinking-level slider pinned to the panel footer
  * (get_available_models → set_model / set_thinking_level). Rendered as a
- * plain popover (no Menu) so the slider keeps pointer/keyboard focus.
+ * popover (no Menu) so the slider keeps pointer/keyboard focus.
  */
 export function ModelPicker({ compact = false }: { compact?: boolean }) {
   const actions = useActions();
@@ -95,15 +98,15 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
     currentLevel ? THINKING_LEVELS.indexOf(currentLevel) : THINKING_LEVELS.indexOf("medium"),
   );
   return (
-    <Dropdown isOpen={open} onOpenChange={setOpen}>
-      <Dropdown.Trigger
-        className={`flex ${compact ? "h-7 max-w-[210px]" : "h-8 max-w-[240px]"} min-w-0 items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200`}
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        className={`flex ${compact ? "h-7 max-w-[210px]" : "h-8 max-w-[240px]"} min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200`}
       >
         <span className="truncate">{modelLabel(current)}</span>
         <IconChevronDown size={13} className="shrink-0 opacity-50" />
-      </Dropdown.Trigger>
-      <Dropdown.Popover placement="top start">
-        <div className="flex max-h-80 w-72 flex-col">
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" className="w-72 p-0">
+        <div className="flex max-h-80 flex-col">
           <p className="px-2.5 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
             {t("picker.models")}
           </p>
@@ -144,8 +147,8 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
             />
           </div>
         </div>
-      </Dropdown.Popover>
-    </Dropdown>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -231,127 +234,125 @@ export function ProjectPicker() {
   };
 
   return (
-    <Dropdown isOpen={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
-      <Dropdown.Trigger
+    <Popover open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
+      <PopoverTrigger
         aria-label={t("picker.project")}
-        className="flex h-7 max-w-[200px] min-w-0 items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+        className="flex h-7 max-w-[200px] min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
       >
         <IconFolder size={13} className="shrink-0 opacity-60" />
         <span className="truncate">{current ? dirName(current) : t("picker.project")}</span>
         <IconChevronDown size={13} className="shrink-0 opacity-50" />
-      </Dropdown.Trigger>
-      <Dropdown.Popover placement="top start">
-        <div className="w-80 p-2">
-          {browse === null ? (
-            <>
-              <div className="flex gap-1.5">
-                <input
-                  autoFocus
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={onSearchKeyDown}
-                  placeholder={t("picker.searchProjects")}
-                  className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-zinc-400 focus:border-accent dark:border-zinc-700 dark:bg-zinc-900"
-                />
-                <button
-                  type="button"
-                  onClick={() => void openFs("")}
-                  title={t("picker.browseDevice")}
-                  className="flex shrink-0 items-center gap-1 rounded-lg border border-zinc-200 px-2 text-[11.5px] font-medium text-zinc-500 transition-colors hover:border-accent hover:text-accent dark:border-zinc-700 dark:text-zinc-400"
-                >
-                  <IconFolder size={12} className="shrink-0" />
-                  {t("picker.browse")}
-                </button>
-              </div>
-              <div className="mt-1 max-h-60 overflow-y-auto">
-                {filtered.map((project) => (
-                  <button
-                    key={project.cwd}
-                    type="button"
-                    onClick={() => commit(project.cwd)}
-                    className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  >
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate text-[12.5px] text-zinc-700 dark:text-zinc-200">
-                        {dirName(project.cwd)}
-                      </span>
-                      <span className="truncate font-mono text-[10.5px] text-zinc-400">{project.cwd}</span>
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2">
-                      {project.sessions > 0 && (
-                        <span className="text-[10.5px] text-zinc-400">{project.sessions}</span>
-                      )}
-                      {project.cwd === current && <span className="text-accent">●</span>}
-                    </span>
-                  </button>
-                ))}
-                {custom && (
-                  <button
-                    type="button"
-                    onClick={() => commit(custom)}
-                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  >
-                    <IconFolder size={13} className="shrink-0 text-accent" />
-                    <span className="truncate text-[12.5px] text-accent">
-                      {t("picker.useCustom", { path: custom })}
-                    </span>
-                  </button>
-                )}
-                {filtered.length === 0 && !custom && (
-                  <p className="px-2.5 py-3 text-center text-[12px] text-zinc-400">{t("picker.noProjects")}</p>
-                )}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  disabled={!browse.parent}
-                  onClick={() => browse.parent && void openFs(browse.parent)}
-                  title={t("picker.up")}
-                  className="flex size-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                >
-                  <IconArrowUp size={13} />
-                </button>
-                <span
-                  className="min-w-0 flex-1 truncate rounded-lg bg-zinc-100 px-2 py-1.5 font-mono text-[11px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-                  title={browse.path || "/"}
-                >
-                  {browse.path || "/"}
-                </span>
-              </div>
-              <div className="mt-1 max-h-56 overflow-y-auto">
-                {browseError ? (
-                  <p className="px-2.5 py-3 text-center text-[12px] text-red-500">{t("picker.fsError")}</p>
-                ) : browse.entries.length === 0 ? (
-                  <p className="px-2.5 py-3 text-center text-[12px] text-zinc-400">{t("picker.emptyFolder")}</p>
-                ) : (
-                  browse.entries.map((entry) => (
-                    <button
-                      key={entry.path}
-                      type="button"
-                      onClick={() => void openFs(entry.path)}
-                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    >
-                      <IconFolder size={13} className="shrink-0 text-zinc-400" />
-                      <span className="truncate text-[12.5px] text-zinc-700 dark:text-zinc-200">{entry.name}</span>
-                    </button>
-                  ))
-                )}
-              </div>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" className="w-80 p-2">
+        {browse === null ? (
+          <>
+            <div className="flex gap-1.5">
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={onSearchKeyDown}
+                placeholder={t("picker.searchProjects")}
+                className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-zinc-400 focus:border-accent dark:border-zinc-700 dark:bg-zinc-900"
+              />
               <button
                 type="button"
-                disabled={!browse.path}
-                onClick={() => commit(browse.path)}
-                className="mt-1 w-full rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => void openFs("")}
+                title={t("picker.browseDevice")}
+                className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-zinc-200 px-2 text-[11.5px] font-medium text-zinc-500 transition-colors hover:border-accent hover:text-accent dark:border-zinc-700 dark:text-zinc-400"
               >
-                {t("picker.useFolder")}
+                <IconFolder size={12} className="shrink-0" />
+                {t("picker.browse")}
               </button>
-            </>
-          )}
-        </div>
-      </Dropdown.Popover>
-    </Dropdown>
+            </div>
+            <div className="mt-1 max-h-60 overflow-y-auto">
+              {filtered.map((project) => (
+                <button
+                  key={project.cwd}
+                  type="button"
+                  onClick={() => commit(project.cwd)}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-[12.5px] text-zinc-700 dark:text-zinc-200">
+                      {dirName(project.cwd)}
+                    </span>
+                    <span className="truncate font-mono text-[10.5px] text-zinc-400">{project.cwd}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    {project.sessions > 0 && (
+                      <span className="text-[10.5px] text-zinc-400">{project.sessions}</span>
+                    )}
+                    {project.cwd === current && <span className="text-accent">●</span>}
+                  </span>
+                </button>
+              ))}
+              {custom && (
+                <button
+                  type="button"
+                  onClick={() => commit(custom)}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  <IconFolder size={13} className="shrink-0 text-accent" />
+                  <span className="truncate text-[12.5px] text-accent">
+                    {t("picker.useCustom", { path: custom })}
+                  </span>
+                </button>
+              )}
+              {filtered.length === 0 && !custom && (
+                <p className="px-2.5 py-3 text-center text-[12px] text-zinc-400">{t("picker.noProjects")}</p>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={!browse.parent}
+                onClick={() => browse.parent && void openFs(browse.parent)}
+                title={t("picker.up")}
+                className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              >
+                <IconArrowUp size={13} />
+              </button>
+              <span
+                className="min-w-0 flex-1 truncate rounded-lg bg-zinc-100 px-2 py-1.5 font-mono text-[11px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                title={browse.path || "/"}
+              >
+                {browse.path || "/"}
+              </span>
+            </div>
+            <div className="mt-1 max-h-56 overflow-y-auto">
+              {browseError ? (
+                <p className="px-2.5 py-3 text-center text-[12px] text-red-500">{t("picker.fsError")}</p>
+              ) : browse.entries.length === 0 ? (
+                <p className="px-2.5 py-3 text-center text-[12px] text-zinc-400">{t("picker.emptyFolder")}</p>
+              ) : (
+                browse.entries.map((entry) => (
+                  <button
+                    key={entry.path}
+                    type="button"
+                    onClick={() => void openFs(entry.path)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  >
+                    <IconFolder size={13} className="shrink-0 text-zinc-400" />
+                    <span className="truncate text-[12.5px] text-zinc-700 dark:text-zinc-200">{entry.name}</span>
+                  </button>
+                ))
+              )}
+            </div>
+            <button
+              type="button"
+              disabled={!browse.path}
+              onClick={() => commit(browse.path)}
+              className="mt-1 w-full cursor-pointer rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {t("picker.useFolder")}
+            </button>
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }

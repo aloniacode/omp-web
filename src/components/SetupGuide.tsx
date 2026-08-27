@@ -1,7 +1,7 @@
 import { useState } from "react";
+import { Check as IconCheck, Copy as IconCopy } from "lucide-react";
 import { useActions, useAppStore } from "../state/store";
 import { useI18n } from "../i18n";
-import { IconCheck, IconCopy } from "./icons";
 
 const INSTALL_OPTIONS: Array<{ label: string; command: string; note?: string }> = [
   { label: "Windows (PowerShell)", command: "irm https://omp.sh/install.ps1 | iex" },

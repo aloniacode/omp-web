@@ -6,7 +6,15 @@ import { togglePin, usePinned } from "../lib/pins";
 import { useI18n } from "../i18n";
 import { ScrollArea } from "./ScrollArea";
 import { SettingsDialog } from "./SettingsDialog";
-import { IconPencil, IconPin, IconPlus, IconSearch, IconSettings, IconTrash, IconX } from "./icons";
+import {
+  Pencil as IconPencil,
+  Pin as IconPin,
+  Plus as IconPlus,
+  Search as IconSearch,
+  Settings as IconSettings,
+  Trash2 as IconTrash,
+  X as IconX,
+} from "lucide-react";
 
 type GroupMode = "date" | "project";
 const GROUP_MODE_KEY = "omp-web.session-group";
@@ -174,7 +182,7 @@ function SessionItem({
           pinned ? "text-accent" : "text-zinc-400 opacity-0 group-hover:opacity-100"
         }`}
       >
-        <IconPin size={12} filled={pinned} />
+        <IconPin size={12} fill={pinned ? "currentColor" : "none"} />
       </button>
       <button
         type="button"

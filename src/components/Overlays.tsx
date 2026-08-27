@@ -3,7 +3,7 @@ import { useActions, useAppStore } from "../state/store";
 import { useI18n } from "../i18n";
 import type { ExtensionUiRequest } from "../rpc/types";
 import { ModalShell } from "./Sidebar";
-import { IconExternalLink, IconX } from "./icons";
+import { ExternalLink as IconExternalLink, X as IconX } from "lucide-react";
 
 /** Interactive extension UI requests (select/confirm/input/editor/open_url). */
 export function ExtUiDialogs() {

@@ -1,12 +1,25 @@
 import { useMemo, useState } from "react";
-import { Dropdown } from "@heroui/react";
+import {
+  ArchiveRestore as IconCompress,
+  Ellipsis as IconDots,
+  ExternalLink as IconExternalLink,
+  PanelLeft as IconPanelLeft,
+  Pencil as IconPencil,
+  Pin as IconPin,
+  Trash2 as IconTrash,
+} from "lucide-react";
 import { useI18n } from "../i18n";
 import { useActions, useAppStore } from "../state/store";
 import type { SessionMeta } from "../rpc/types";
 import { DeleteDialog, RenameDialog } from "./Sidebar";
 import { isPinned, togglePin } from "../lib/pins";
 import { fmtCost, fmtPercent, fmtTokens } from "../lib/format";
-import { IconCompress, IconDots, IconExternalLink, IconPanelLeft, IconPencil, IconPin, IconTrash } from "./icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 
 /** Centered conversation usage cluster: tokens · cost · context. */
 function UsageCluster() {
@@ -57,68 +70,36 @@ function SessionMenu({ session }: { session: SessionMeta | null }) {
 
   return (
     <>
-      <Dropdown>
-        <Dropdown.Trigger
+      <DropdownMenu>
+        <DropdownMenuTrigger
           aria-label={t("topbar.more")}
           className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
         >
           <IconDots size={16} />
-        </Dropdown.Trigger>
-        <Dropdown.Popover placement="bottom end">
-          <Dropdown.Menu
-            onAction={(key) => {
-              switch (String(key)) {
-                case "rename":
-                  setRenaming(true);
-                  break;
-                case "pin":
-                  if (session?.path) togglePin(session.path);
-                  break;
-                case "compact":
-                  actions.compact();
-                  break;
-                case "export":
-                  actions.exportHtml();
-                  break;
-                case "delete":
-                  setDeleting(true);
-                  break;
-              }
-            }}
-          >
-            <Dropdown.Item key="rename" id="rename" textValue={t("topbar.rename")} isDisabled={!hasSession}>
-              <span className="flex items-center gap-2 text-[13px]">
-                <IconPencil size={13} className="text-zinc-400" />
-                {t("topbar.rename")}
-              </span>
-            </Dropdown.Item>
-            <Dropdown.Item key="pin" id="pin" textValue={t("sidebar.pin")} isDisabled={!session?.path}>
-              <span className="flex items-center gap-2 text-[13px]">
-                <IconPin size={13} className="text-zinc-400" filled={pinned} />
-                {pinned ? t("sidebar.unpin") : t("sidebar.pin")}
-              </span>
-            </Dropdown.Item>
-            <Dropdown.Item key="compact" id="compact" textValue={t("topbar.compact")}>
-              <span className="flex items-center gap-2 text-[13px]">
-                <IconCompress size={13} className="text-zinc-400" />
-                {t("topbar.compact")}
-              </span>
-            </Dropdown.Item>
-            <Dropdown.Item key="export" id="export" textValue={t("topbar.exportHtml")}>
-              <span className="flex items-center gap-2 text-[13px]">
-                <IconExternalLink size={13} className="text-zinc-400" />
-                {t("topbar.exportHtml")}
-              </span>
-            </Dropdown.Item>
-            <Dropdown.Item key="delete" id="delete" textValue={t("topbar.delete")} isDisabled={!session?.path}>
-              <span className="flex items-center gap-2 text-[13px] text-red-600 dark:text-red-400">
-                <IconTrash size={13} />
-                {t("topbar.delete")}
-              </span>
-            </Dropdown.Item>
-          </Dropdown.Menu>
-        </Dropdown.Popover>
-      </Dropdown>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem disabled={!hasSession} onSelect={() => setRenaming(true)}>
+            <IconPencil size={13} className="text-zinc-400" />
+            {t("topbar.rename")}
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={!session?.path} onSelect={() => session?.path && togglePin(session.path)}>
+            <IconPin size={13} className="text-zinc-400" fill={pinned ? "currentColor" : "none"} />
+            {pinned ? t("sidebar.unpin") : t("sidebar.pin")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => actions.compact()}>
+            <IconCompress size={13} className="text-zinc-400" />
+            {t("topbar.compact")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => actions.exportHtml()}>
+            <IconExternalLink size={13} className="text-zinc-400" />
+            {t("topbar.exportHtml")}
+          </DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" disabled={!session?.path} onSelect={() => setDeleting(true)}>
+            <IconTrash size={13} />
+            {t("topbar.delete")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       {renaming && session && <RenameDialog target={session} onClose={() => setRenaming(false)} />}
       {deleting && session && <DeleteDialog target={session} onClose={() => setDeleting(false)} />}
     </>

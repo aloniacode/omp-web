@@ -1,12 +1,17 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Dropdown } from "@heroui/react";
+import { Check as IconCheck, ChevronDown as IconChevronDown, X as IconX } from "lucide-react";
 import { useI18n } from "../i18n";
 import { useTheme, ACCENTS, type ThemePref } from "../lib/theme";
 import { useActions, useAppStore } from "../state/store";
 import { THINKING_LEVELS } from "../rpc/types";
-import { IconChevronDown, IconX } from "./icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useI18n();
@@ -116,26 +121,22 @@ function Select({ value, options, onChange }: {
 }) {
   const current = options.find((o) => o.id === value);
   return (
-    <Dropdown>
-      <Dropdown.Trigger
-        className="flex min-w-32 items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[12.5px] font-medium text-zinc-700 hover:border-accent dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className="flex min-w-32 cursor-pointer items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[12.5px] font-medium text-zinc-700 hover:border-accent dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
       >
         <span className="truncate">{current?.label ?? "—"}</span>
         <IconChevronDown size={13} className="shrink-0 opacity-50" />
-      </Dropdown.Trigger>
-      <Dropdown.Popover>
-        <Dropdown.Menu onAction={(key) => onChange(String(key))}>
-          {options.map((option) => (
-            <Dropdown.Item key={option.id} id={option.id} textValue={option.label}>
-              <span className="flex items-center justify-between gap-4">
-                {option.label}
-                {value === option.id && <span className="text-accent">●</span>}
-              </span>
-            </Dropdown.Item>
-          ))}
-        </Dropdown.Menu>
-      </Dropdown.Popover>
-    </Dropdown>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {options.map((option) => (
+          <DropdownMenuItem key={option.id} onSelect={() => onChange(option.id)}>
+            {option.label}
+            {value === option.id && <IconCheck size={13} className="ml-auto text-accent" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

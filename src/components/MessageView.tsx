@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Disclosure } from "@heroui/react";
+import { Bot as IconBot, Check as IconCheck, ChevronRight } from "lucide-react";
 import type {
   AssistantMessage,
   ImageContent,
@@ -13,7 +13,7 @@ import { fmtCost, fmtTokPerSec, fmtTokens, truncate, userText } from "../lib/for
 import { useI18n } from "../i18n";
 import { Markdown } from "./Markdown";
 import { useAppStore } from "../state/store";
-import { IconBot, IconCheck } from "./icons";
+import { Collapsible as CollapsibleRoot, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
 
 // ── Collapsible shell ───────────────────────────────────────────────────────
 
@@ -35,18 +35,22 @@ function Collapsible({
         ? "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60"
         : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900";
   return (
-    <Disclosure defaultExpanded={defaultOpen} className={`overflow-hidden rounded-xl border ${toneClass}`}>
-      <Disclosure.Trigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">
-        <Disclosure.Indicator className="shrink-0 text-zinc-400" />
+    <CollapsibleRoot defaultOpen={defaultOpen} className={`overflow-hidden rounded-xl border ${toneClass}`}>
+      <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">
+        <ChevronRight
+          size={14}
+          className="shrink-0 text-zinc-400 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90"
+        />
         <span className="min-w-0 flex-1 truncate">{title}</span>
-      </Disclosure.Trigger>
-      {/* Padding lives on an inner wrapper: the collapsed panel is height 0
-          with overflow clip, and padding on the panel itself would still
-          occupy space — leaving a dead strip the trigger hover can't cover. */}
-      <Disclosure.Content>
+      </CollapsibleTrigger>
+      {/* Padding lives on an inner wrapper: Radix collapses the content via
+          height animation + overflow hidden, and padding on the panel itself
+          would still occupy space — leaving a dead strip the trigger hover
+          can't cover. */}
+      <CollapsibleContent>
         <div className="px-3 pb-3">{children}</div>
-      </Disclosure.Content>
-    </Disclosure>
+      </CollapsibleContent>
+    </CollapsibleRoot>
   );
 }
 

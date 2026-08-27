@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "@heroui/styles";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -53,12 +52,115 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent-hover: var(--accent-hover);
+
+  /* shadcn/ui semantic tokens, mapped onto the zinc + accent system. */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 }
 
 @theme {
   /* Maple Mono for both sans and mono stacks: it is the app's UI font. */
   --font-sans: "Maple Mono NL NF CN", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   --font-mono: "Maple Mono NL NF CN", ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+/* ── shadcn/ui base palette (zinc, light/dark) ─────────────────────────────
+ * `--primary` follows the runtime-switchable brand accent; everything else
+ * stays on zinc so the shadcn components sit inside the existing theme. */
+:root {
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.185 0.005 285.885);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.185 0.005 285.885);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.185 0.005 285.885);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.185 0.005 285.885);
+  --muted: oklch(0.967 0.001 286.375);
+  --muted-foreground: oklch(0.552 0.016 285.938);
+  --border: oklch(0.92 0.004 286.32);
+  --input: oklch(0.92 0.004 286.32);
+  --ring: var(--accent);
+}
+.dark {
+  --background: oklch(0.141 0.005 285.823);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.185 0.005 285.885);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.185 0.005 285.885);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.274 0.006 286.033);
+  --muted-foreground: oklch(0.712 0.013 286.067);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: var(--accent);
+}
+
+/* ── Radix collapsible expand/collapse animation ────────────────────────────
+ * Radix exposes the measured content height as a CSS variable while the
+ * data-state animations run. */
+
+@keyframes collapsible-open {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+  }
+}
+@keyframes collapsible-close {
+  from {
+    height: var(--radix-collapsible-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+[data-slot="collapsible-content"] {
+  overflow: hidden;
+}
+[data-slot="collapsible-content"][data-state="open"] {
+  animation: collapsible-open 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+[data-slot="collapsible-content"][data-state="closed"] {
+  animation: collapsible-close 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Radix dropdown/popover enter/exit animations */
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+[data-slot="overlay-content"] {
+  animation: overlay-in 140ms ease-out;
+  transform-origin: var(--overlay-origin, bottom);
 }
 
 :root,

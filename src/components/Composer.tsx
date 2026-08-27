@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Button, Dropdown } from "@heroui/react";
+import {
+  AtSign as IconAtSign,
+  Image as IconImage,
+  Plus as IconPlus,
+  Send as IconSend,
+  Square as IconSquare,
+  X as IconX,
+  Zap as IconZap,
+} from "lucide-react";
 import { useI18n } from "../i18n";
 import { useActions, useAppStore } from "../state/store";
 import {
@@ -10,7 +18,13 @@ import {
 } from "../state/composerText";
 import type { ImageContent } from "../rpc/types";
 import { ModelPicker, ProjectPicker } from "./pickers";
-import { IconAtSign, IconImage, IconPlus, IconSend, IconSquare, IconX, IconZap } from "./icons";
+import { Button } from "./ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 
 interface MentionState {
   kind: "file" | "skill";
@@ -45,42 +59,29 @@ function readImage(file: File): Promise<Attachment> {
 function PlusMenu({ onPick, disabled }: { onPick: (kind: "file" | "skill" | "image") => void; disabled: boolean }) {
   const { t } = useI18n();
   return (
-    <Dropdown>
-      <Dropdown.Trigger
-        isDisabled={disabled}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        disabled={disabled}
         aria-label={t("composer.attach")}
-        className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+        className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
       >
         <IconPlus size={15} />
-      </Dropdown.Trigger>
-      <Dropdown.Popover placement="top start">
-        <Dropdown.Menu
-          onAction={(key) => {
-            const kind = String(key);
-            if (kind === "file" || kind === "skill" || kind === "image") onPick(kind);
-          }}
-        >
-          <Dropdown.Item key="file" id="file" textValue={t("composer.fileRef")}>
-            <span className="flex items-center gap-2 text-[13px]">
-              <IconAtSign size={13} className="shrink-0 text-zinc-400" />
-              {t("composer.fileRef")}
-            </span>
-          </Dropdown.Item>
-          <Dropdown.Item key="skill" id="skill" textValue={t("composer.skillsRef")}>
-            <span className="flex items-center gap-2 text-[13px]">
-              <IconZap size={13} className="shrink-0 text-zinc-400" />
-              {t("composer.skillsRef")}
-            </span>
-          </Dropdown.Item>
-          <Dropdown.Item key="image" id="image" textValue={t("composer.attachImage")}>
-            <span className="flex items-center gap-2 text-[13px]">
-              <IconImage size={13} className="shrink-0 text-zinc-400" />
-              {t("composer.attachImage")}
-            </span>
-          </Dropdown.Item>
-        </Dropdown.Menu>
-      </Dropdown.Popover>
-    </Dropdown>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start">
+        <DropdownMenuItem onSelect={() => onPick("file")}>
+          <IconAtSign size={13} className="text-zinc-400" />
+          {t("composer.fileRef")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onPick("skill")}>
+          <IconZap size={13} className="text-zinc-400" />
+          {t("composer.skillsRef")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onPick("image")}>
+          <IconImage size={13} className="text-zinc-400" />
+          {t("composer.attachImage")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -418,18 +419,17 @@ export function Composer() {
             <div className="min-w-0 flex-1" />
             {stopping || isStreaming ? (
               <Button
-                onPress={actions.stop}
+                onClick={actions.stop}
                 aria-label={stopping ? t("composer.stopping") : t("composer.stop")}
-                className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-red-600 text-white transition-colors hover:bg-red-500"
+                className="bg-red-600 text-white hover:bg-red-500"
               >
                 <IconSquare size={12} />
               </Button>
             ) : (
               <Button
-                onPress={submit}
-                isDisabled={(!composerText.trim() && attachments.length === 0) || !connected}
+                onClick={submit}
+                disabled={(!composerText.trim() && attachments.length === 0) || !connected}
                 aria-label={t("composer.send")}
-                className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <IconSend size={15} />
               </Button>
