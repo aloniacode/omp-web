@@ -12,10 +12,10 @@ import { OmpRpcClient, type ConnStatus } from "../rpc/client";
 import { storeT } from "../i18n";
 import type {
   AgentEndFrame,
+  ImageContent,
   AgentMessage,
   AssistantMessage,
   ExtensionUiRequest,
-  ImageContent,
   ModelInfo,
   NoticeFrame,
   RpcFrame,
@@ -87,7 +87,7 @@ export interface AppState {
 }
 
 export interface StoreActions {
-  sendPrompt(text: string): void;
+  sendPrompt(text: string, images?: ImageContent[]): void;
   stop(): void;
   newChat(): void;
   openSession(path: string): void;
@@ -558,17 +558,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addNotice("error", err instanceof Error ? err.message : `${what} failed`);
 
     return {
-      sendPrompt(text: string) {
+      sendPrompt(text: string, images?: ImageContent[]) {
         const trimmed = text.trim();
-        if (!trimmed) return;
+        if (!trimmed && (!images || images.length === 0)) return;
         const streaming = stateRef.current.agentState?.isStreaming || stateRef.current.streamingMsg !== null;
+        const hasImages = Boolean(images && images.length > 0);
         dispatch({
           type: "append_entry",
-          entry: { role: "user", content: trimmed, timestamp: Date.now(), pending: true },
+          entry: {
+            role: "user",
+            content: hasImages && trimmed ? [{ type: "text", text: trimmed }, ...(images ?? [])] : trimmed,
+            timestamp: Date.now(),
+            pending: true,
+          },
         });
         const command = streaming
-          ? ({ type: "prompt", message: trimmed, streamingBehavior: "followUp" } as const)
-          : ({ type: "prompt", message: trimmed } as const);
+          ? ({ type: "prompt", message: trimmed, images, streamingBehavior: "followUp" } as const)
+          : ({ type: "prompt", message: trimmed, images } as const);
         client
           .request<{ agentInvoked?: boolean }>(command)
           .then((resp) => {

@@ -324,7 +324,7 @@ export type RpcFrame =
 // ── Commands (stdin) ────────────────────────────────────────────────────────
 
 export type RpcCommand =
-  | { id?: string; type: "prompt"; message: string; streamingBehavior?: "steer" | "followUp" }
+  | { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
   | { id?: string; type: "steer"; message: string }
   | { id?: string; type: "follow_up"; message: string }
   | { id?: string; type: "abort" }
