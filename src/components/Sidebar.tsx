@@ -137,7 +137,7 @@ function SessionItem({
       <button
         type="button"
         onClick={() => actions.openSession(session.path)}
-        className="block w-full px-3 py-2 pr-14 text-left"
+        className="block w-full px-3 py-2 pr-16 text-left"
       >
         <span
           className={`block truncate text-[13.5px] font-medium ${active ? "text-accent" : "text-zinc-700 dark:text-zinc-200"}`}
@@ -146,7 +146,7 @@ function SessionItem({
         </span>
         <span className="mt-0.5 block truncate text-[11.5px] text-zinc-400 dark:text-zinc-500">{sub}</span>
       </button>
-      <div className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex">
+      <div className="absolute right-2 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex">
         <button
           type="button"
           title={t("sidebar.rename")}
