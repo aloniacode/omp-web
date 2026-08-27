@@ -2,7 +2,47 @@ import { useState } from "react";
 import { useI18n } from "../i18n";
 import { useStore } from "../state/store";
 import { SettingsDialog } from "./SettingsDialog";
+import { fmtCost, fmtPercent, fmtTokens } from "../lib/format";
 import { IconPanelLeft } from "./icons";
+
+/** Centered conversation usage cluster: tokens · cost · context. */
+function UsageCluster() {
+  const { t } = useI18n();
+  const { state } = useStore();
+  const usage = state.stats;
+  const context = state.stats?.contextUsage ?? state.agentState?.contextUsage;
+  if (!usage) return null;
+  const ctxHot = context != null && context.percent >= 80;
+  return (
+    <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full bg-zinc-100/80 px-3 py-1 text-[11px] font-medium tabular-nums text-zinc-500 md:flex dark:bg-zinc-800/70 dark:text-zinc-400">
+      <span title={t("composer.usageTotal", { tokens: usage.tokens.total })}>
+        {fmtTokens(usage.tokens.total)}
+        <span className="ml-0.5 text-zinc-400 dark:text-zinc-500">tok</span>
+      </span>
+      <span aria-hidden className="text-zinc-300 dark:text-zinc-600">
+        ·
+      </span>
+      <span title={t("composer.usageCost")}>{fmtCost(usage.cost)}</span>
+      {context && context.contextWindow > 0 && (
+        <>
+          <span aria-hidden className="text-zinc-300 dark:text-zinc-600">
+            ·
+          </span>
+          <span
+            className={ctxHot ? "text-amber-600 dark:text-amber-400" : undefined}
+            title={t("composer.usageContext", {
+              used: fmtTokens(context.tokens),
+              window: fmtTokens(context.contextWindow),
+              percent: fmtPercent(context.percent),
+            })}
+          >
+            ctx {fmtPercent(context.percent)}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
 
 export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const { t } = useI18n();
@@ -16,7 +56,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
     (state.sessionId ? t("topbar.session", { id: state.sessionId.slice(0, 8) }) : t("topbar.untitled"));
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white px-3 sm:px-4 dark:border-zinc-800 dark:bg-zinc-900/80">
+    <header className="relative flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white px-3 sm:px-4 dark:border-zinc-800 dark:bg-zinc-900/80">
       <button
         type="button"
         onClick={onToggleSidebar}
@@ -41,6 +81,8 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
           </span>
         )}
       </h1>
+
+      <UsageCluster />
 
       <button
         type="button"

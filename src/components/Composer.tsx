@@ -3,7 +3,6 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useI18n } from "../i18n";
 import { useStore } from "../state/store";
 import type { ImageContent } from "../rpc/types";
-import { fmtCost, fmtPercent, fmtTokens } from "../lib/format";
 import { ModelPicker, ThinkingPicker } from "./pickers";
 import { IconAtSign, IconImage, IconPaperclip, IconSend, IconSquare, IconX, IconZap } from "./icons";
 
@@ -267,9 +266,6 @@ export function Composer() {
     setAttachments((current) => [...current, ...picked]);
   };
 
-  const usage = state.stats;
-  const context = state.stats?.contextUsage ?? state.agentState?.contextUsage;
-
   return (
     <div className="shrink-0 px-4 pb-4 pt-1 sm:px-6">
       <div className="relative mx-auto max-w-3xl">
@@ -389,7 +385,7 @@ export function Composer() {
           )}
         </div>
 
-        {/* Toolbar blocks: refs | model/thinking | usage */}
+        {/* Toolbar blocks: refs | model/thinking */}
         <div className="mt-1.5 flex flex-wrap items-center gap-2 px-1">
           <button
             type="button"
@@ -414,26 +410,6 @@ export function Composer() {
 
           <ModelPicker compact />
           <ThinkingPicker compact />
-
-          {usage && (
-            <span className="ml-auto flex items-center gap-2.5 text-[11px] tabular-nums text-zinc-400 dark:text-zinc-500">
-              <span title={t("composer.usageTotal", { tokens: usage.tokens.total })}>
-                {fmtTokens(usage.tokens.total)} tok
-              </span>
-              <span title={t("composer.usageCost")}>{fmtCost(usage.cost)}</span>
-              {context && context.contextWindow > 0 && (
-                <span
-                  title={t("composer.usageContext", {
-                    used: fmtTokens(context.tokens),
-                    window: fmtTokens(context.contextWindow),
-                    percent: fmtPercent(context.percent),
-                  })}
-                >
-                  ctx {fmtPercent(context.percent)}
-                </span>
-              )}
-            </span>
-          )}
         </div>
         <p className="mt-1 text-center text-[11px] text-zinc-400 dark:text-zinc-500">{t("composer.hint")}</p>
       </div>
