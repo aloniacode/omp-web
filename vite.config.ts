@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { defineConfig, type Plugin } from "vite";
+import { WebSocket, WebSocketServer } from "ws";
+import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -12,9 +13,13 @@ const BRIDGE_HOST = `http://127.0.0.1:${BRIDGE}`;
  * lifecycle: when vite exits (even when hard-killed — the bridge watches
  * the parent PID) the bridge goes down with it, never orphaning the port.
  * Skipped when a bridge is already listening (e.g. `npm run bridge`).
+ * Also relays /ws itself: vite's built-in proxy prints full stack traces
+ * for the ECONNABORTED/EPIPE writes that always happen when a page reloads
+ * mid-stream, drowning the console at every restart.
  */
 function ompBridge(): Plugin {
   let child: ReturnType<typeof spawn> | null = null;
+  let stopping = false;
   const root = fileURLToPath(new URL(".", import.meta.url));
 
   const spawnBridge = () => {
@@ -25,12 +30,18 @@ function ompBridge(): Plugin {
       env: { ...process.env, OMP_PARENT_PID: String(process.pid) },
     });
     child.on("exit", (code) => {
-      if (child) child = null;
-      if (code != null && code !== 0) console.log(`[vite] bridge exited with code ${code}`);
+      if (stopping || !child) return;
+      child = null;
+      // Crash: bring it back so a bridge hiccup doesn't need a dev restart.
+      console.log(`[vite] bridge exited (code ${code}), restarting in 2s…`);
+      setTimeout(() => {
+        if (!stopping && !child) spawnBridge();
+      }, 2000);
     });
   };
 
   const killBridge = () => {
+    stopping = true;
     if (!child?.pid) return;
     const pid = child.pid;
     child = null;
@@ -44,10 +55,53 @@ function ompBridge(): Plugin {
     }
   };
 
+  /** Expected-when: socket writes racing a page reload / bridge restart. */
+  const quiet = (err: NodeJS.ErrnoException) => {
+    const code = String(err.code);
+    if (!["ECONNABORTED", "EPIPE", "ECONNRESET", "ECONNREFUSED"].includes(code)) {
+      console.error(`[vite] ws relay error: ${err.message}`);
+    }
+  };
+
+  /** Relay browser <-> bridge frames without vite's proxy stack traces. */
+  const relayWs = (server: ViteDevServer) => {
+    const wss = new WebSocketServer({ noServer: true });
+    server.httpServer?.on("upgrade", (req, socket, head) => {
+      if (!req.url?.split("?")[0].startsWith("/ws")) return;
+      wss.handleUpgrade(req, socket, head, (client) => {
+        const upstream = new WebSocket(`ws://127.0.0.1:${BRIDGE}/ws`);
+        const pending: Array<Parameters<WebSocket["send"]>[0]> = [];
+        client.on("error", quiet);
+        upstream.on("error", quiet);
+        client.on("message", (data, isBinary) => {
+          if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: isBinary });
+          else if (upstream.readyState === WebSocket.CONNECTING) pending.push(data);
+        });
+        upstream.on("message", (data, isBinary) => {
+          if (client.readyState === WebSocket.OPEN) client.send(data, { binary: isBinary });
+        });
+        upstream.on("open", () => {
+          for (const data of pending.splice(0)) upstream.send(data);
+        });
+        const teardown = () => {
+          try {
+            upstream.terminate();
+          } catch {}
+          try {
+            client.terminate();
+          } catch {}
+        };
+        client.on("close", teardown);
+        upstream.on("close", teardown);
+      });
+    });
+  };
+
   return {
     name: "omp-bridge",
     apply: "serve",
     configureServer(server) {
+      relayWs(server);
       // Reuse an already-running bridge instead of fighting for the port.
       fetch(`${BRIDGE_HOST}/api/health`)
         .then((res) => {
@@ -58,9 +112,6 @@ function ompBridge(): Plugin {
 
       server.httpServer?.on("close", killBridge);
       process.once("exit", killBridge);
-    },
-    closeBundle() {
-      killBridge();
     },
   };
 }
@@ -81,7 +132,6 @@ export default defineConfig({
     port: 9527,
     proxy: {
       "/api": { target: BRIDGE_HOST, changeOrigin: true },
-      "/ws": { target: `ws://127.0.0.1:${BRIDGE}`, ws: true },
     },
   },
 });
