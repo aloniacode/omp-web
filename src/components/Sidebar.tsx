@@ -163,30 +163,32 @@ function SessionItem({
   });
   return (
     <div
-      className={`group relative rounded-lg ${active ? "bg-accent/10 dark:bg-accent/15" : "hover:bg-zinc-200/60 dark:hover:bg-zinc-800/70"}`}
+      className={`group relative flex items-center rounded-lg ${active ? "bg-accent/10 dark:bg-accent/15" : "hover:bg-zinc-200/60 dark:hover:bg-zinc-800/70"}`}
     >
+      {/* Pin toggle lives at the very front, always visible when pinned */}
+      <button
+        type="button"
+        title={pinned ? t("sidebar.unpin") : t("sidebar.pin")}
+        onClick={() => togglePin(session.path)}
+        className={`ml-1 flex size-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-zinc-300/70 dark:hover:bg-zinc-700 ${
+          pinned ? "text-accent" : "text-zinc-400 opacity-0 group-hover:opacity-100"
+        }`}
+      >
+        <IconPin size={12} filled={pinned} />
+      </button>
       <button
         type="button"
         onClick={() => actions.openSession(session.path)}
-        className="block w-full px-3 py-2 pr-20 text-left"
+        className="min-w-0 flex-1 px-1.5 py-2 pr-14 text-left"
       >
         <span
-          className={`flex items-center gap-1 truncate text-[13.5px] font-medium ${active ? "text-accent" : "text-zinc-700 dark:text-zinc-200"}`}
+          className={`block truncate text-[13.5px] font-medium ${active ? "text-accent" : "text-zinc-700 dark:text-zinc-200"}`}
         >
-          {pinned && <IconPin size={11} filled className="shrink-0 text-accent/70" />}
-          <span className="truncate">{title}</span>
+          {title}
         </span>
         <span className="mt-0.5 block truncate text-[11.5px] text-zinc-400 dark:text-zinc-500">{sub}</span>
       </button>
       <div className="absolute right-2 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex">
-        <button
-          type="button"
-          title={pinned ? t("sidebar.unpin") : t("sidebar.pin")}
-          onClick={() => togglePin(session.path)}
-          className="rounded-md p-1 text-zinc-400 hover:bg-zinc-300/70 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-        >
-          <IconPin size={13} filled={pinned} />
-        </button>
         <button
           type="button"
           title={t("sidebar.rename")}
