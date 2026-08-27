@@ -5,7 +5,15 @@ import tailwindcss from "@tailwindcss/vite";
 const BRIDGE = process.env.BRIDGE_PORT ?? "8787";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react({
+      // React Compiler: auto-memoizes components and JSX (React 19 runtime).
+      babel: {
+        plugins: ["babel-plugin-react-compiler"],
+      },
+    }),
+    tailwindcss(),
+  ],
   server: {
     host: "127.0.0.1",
     port: 9527,
