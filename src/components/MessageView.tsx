@@ -104,6 +104,50 @@ function ToolCard({ tool }: { tool: ToolView }) {
   );
 }
 
+// ── Turn summary (completed turns) ──────────────────────────────────────────
+
+function fmtDuration(ms: number): string {
+  const s = ms / 1000;
+  if (s < 60) return `${s < 10 ? s.toFixed(1) : Math.round(s)}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${Math.round(s % 60)}s`;
+}
+
+/**
+ * Completed turns collapse their whole reasoning/tool process into one
+ * summary row (codex-style): step count + elapsed time. Collapsed by
+ * default, so large histories render far fewer nodes and one fold changing
+ * no longer re-lays-out the whole conversation.
+ */
+function TurnSummary({
+  message,
+  processCount,
+  children,
+}: {
+  message: AssistantMessage;
+  processCount: number;
+  children: ReactNode;
+}) {
+  const { t } = useI18n();
+  const duration = message.duration != null ? fmtDuration(message.duration) : null;
+  return (
+    <Collapsible
+      tone="dim"
+      title={
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="text-[12px] leading-none">⚡</span>
+          <span className="text-zinc-500 dark:text-zinc-400">
+            {t("message.turnSummary", { steps: processCount })}
+          </span>
+          {duration && <span className="shrink-0 text-[11.5px] tabular-nums text-zinc-400">{duration}</span>}
+        </span>
+      }
+    >
+      <div className="space-y-2">{children}</div>
+    </Collapsible>
+  );
+}
+
 // ── Thinking block ──────────────────────────────────────────────────────────
 
 /** Render cap for thinking text: opening a fold with tens of thousands of
@@ -235,6 +279,10 @@ function isThinkingBlock(block: AssistantMessage["content"][number]): block is T
   return block.type === "thinking";
 }
 
+function isProcessBlock(block: AssistantMessage["content"][number]): boolean {
+  return block.type === "thinking" || block.type === "redactedThinking" || block.type === "toolCall";
+}
+
 export function MessageView({
   message,
   resultsByCallId,
@@ -254,6 +302,52 @@ export function MessageView({
     if (isThinkingBlock(block)) lastThinkingIndex = index;
   });
 
+  const renderBlock = (block: AssistantMessage["content"][number], index: number) => {
+    switch (block.type) {
+      case "text":
+        return (
+          <div
+            key={index}
+            className={isStreamingTurn && index === blocks.length - 1 ? "stream-caret" : undefined}
+          >
+            <Markdown text={(block as TextContent).text} />
+          </div>
+        );
+      case "thinking":
+        return (
+          <ThinkingBlock
+            key={index}
+            text={(block as ThinkingContent).thinking}
+            streaming={isStreamingTurn && index === lastThinkingIndex}
+          />
+        );
+      case "redactedThinking":
+        return <ThinkingBlock key={index} text={t("message.reasoningWithheld")} streaming={false} />;
+      case "toolCall": {
+        const call = block as ToolCall;
+        return <ConnectedToolCard key={call.id || index} call={call} resultsByCallId={resultsByCallId} />;
+      }
+      case "image": {
+        const image = block as ImageContent;
+        return (
+          <img
+            key={index}
+            src={`data:${image.mimeType};base64,${image.data}`}
+            alt="attachment"
+            className="max-h-72 rounded-xl border border-zinc-200 dark:border-zinc-800"
+          />
+        );
+      }
+      default:
+        return null;
+    }
+  };
+
+  // Completed turns fold their reasoning/tool process into one summary row;
+  // text/image blocks stay visible below it.
+  const processCount = blocks.filter(isProcessBlock).length;
+  const collapseProcess = !isStreamingTurn && processCount > 0;
+
   return (
     <div className={`flex gap-3 ${showAvatar ? "" : "pl-10"}`}>
       {showAvatar && (
@@ -262,48 +356,16 @@ export function MessageView({
         </div>
       )}
       <div className="min-w-0 flex-1 space-y-2">
-        {blocks.map((block, index) => {
-          switch (block.type) {
-            case "text":
-              return (
-                <div
-                  key={index}
-                  className={isStreamingTurn && index === blocks.length - 1 ? "stream-caret" : undefined}
-                >
-                  <Markdown text={(block as TextContent).text} />
-                </div>
-              );
-            case "thinking":
-              return (
-                <ThinkingBlock
-                  key={index}
-                  text={(block as ThinkingContent).thinking}
-                  streaming={isStreamingTurn && index === lastThinkingIndex}
-                />
-              );
-            case "redactedThinking":
-              return (
-                <ThinkingBlock key={index} text={t("message.reasoningWithheld")} streaming={false} />
-              );
-            case "toolCall": {
-              const call = block as ToolCall;
-              return <ConnectedToolCard key={call.id || index} call={call} resultsByCallId={resultsByCallId} />;
-            }
-            case "image": {
-              const image = block as ImageContent;
-              return (
-                <img
-                  key={index}
-                  src={`data:${image.mimeType};base64,${image.data}`}
-                  alt="attachment"
-                  className="max-h-72 rounded-xl border border-zinc-200 dark:border-zinc-800"
-                />
-              );
-            }
-            default:
-              return null;
-          }
-        })}
+        {collapseProcess ? (
+          <>
+            <TurnSummary message={message} processCount={processCount}>
+              {blocks.map((block, index) => (isProcessBlock(block) ? renderBlock(block, index) : null))}
+            </TurnSummary>
+            {blocks.map((block, index) => (!isProcessBlock(block) ? renderBlock(block, index) : null))}
+          </>
+        ) : (
+          blocks.map((block, index) => renderBlock(block, index))
+        )}
         {message.errorMessage && (
           <p className="rounded-lg border border-red-300/60 bg-red-50 px-3 py-2 text-[12.5px] text-red-600 dark:border-red-500/40 dark:bg-red-950/30 dark:text-red-300">
             {message.errorMessage}

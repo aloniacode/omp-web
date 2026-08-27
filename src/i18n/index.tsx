@@ -81,6 +81,7 @@ export const messages = {
 
     "message.thinking": "☁️ Thinking…",
     "message.thoughtDone": "☁️ Thought",
+    "message.turnSummary": "⚡ Ran {steps} steps",
     "message.reasoningWithheld": "[reasoning content withheld by provider]",
     "message.showAll": "Show all ({chars} chars)",
     "message.showLess": "Show less",
@@ -244,6 +245,7 @@ export const messages = {
 
     "message.thinking": "☁️ 思考中…",
     "message.thoughtDone": "☁️ 已思考",
+    "message.turnSummary": "⚡ 执行了 {steps} 个步骤",
     "message.reasoningWithheld": "[推理内容已被提供方隐藏]",
     "message.showAll": "显示全部（{chars} 字符）",
     "message.showLess": "收起",
