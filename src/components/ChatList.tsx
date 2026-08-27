@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { ToolResultMessage } from "../rpc/types";
 import { useStore } from "../state/store";
+import { setComposerText } from "../state/composerText";
 import { useI18n } from "../i18n";
 import { MessageView, UserRow, type ChatEntryUser } from "./MessageView";
 import { IconBot } from "./icons";
@@ -9,7 +10,6 @@ import { ScrollArea } from "./ScrollArea";
 const SUGGESTION_KEYS = ["chat.suggestion.1", "chat.suggestion.2", "chat.suggestion.3"] as const;
 
 function EmptyState() {
-  const { actions } = useStore();
   const { t } = useI18n();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 px-6 text-center">
@@ -25,7 +25,7 @@ function EmptyState() {
           <button
             key={key}
             type="button"
-            onClick={() => actions.setComposerText(t(key))}
+            onClick={() => setComposerText(t(key))}
             className="rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-[13px] text-zinc-600 shadow-sm transition-colors hover:border-accent hover:text-accent dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-accent dark:hover:text-accent"
           >
             {t(key)}

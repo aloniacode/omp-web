@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { OmpRpcClient, type ConnStatus } from "../rpc/client";
+import { setComposerText } from "./composerText";
 import { storeT } from "../i18n";
 import type {
   AgentEndFrame,
@@ -86,7 +87,6 @@ export interface AppState {
   projectCwd: string | null;
   notices: UiNotice[];
   extStack: ExtensionUiRequest[];
-  composerText: string;
   stopping: boolean;
   /** Prompt accepted; waiting for the agent's first event (working indicator). */
   awaitingAgent: boolean;
@@ -102,7 +102,6 @@ export interface StoreActions {
   deleteSession(path: string): Promise<void>;
   compact(customInstructions?: string): void;
   respondExtUi(request: ExtensionUiRequest, outcome: ExtOutcome): void;
-  setComposerText(text: string): void;
   dismissNotice(id: number): void;
   recheckHealth(): Promise<boolean>;
   refreshSessions(): void;
@@ -144,7 +143,6 @@ const initialState: AppState = {
   projectCwd: null,
   notices: [],
   extStack: [],
-  composerText: "",
   stopping: false,
   awaitingAgent: false,
 };
@@ -170,7 +168,6 @@ type Action =
   | { type: "dismiss_notice"; id: number }
   | { type: "push_ext_ui"; request: ExtensionUiRequest }
   | { type: "pop_ext_ui"; id: string }
-  | { type: "composer_text"; text: string }
   | { type: "session_name"; name: string }
   | { type: "stopping"; value: boolean }
   | { type: "awaiting_agent"; value: boolean };
@@ -261,8 +258,6 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, extStack: [...state.extStack, action.request] };
     case "pop_ext_ui":
       return { ...state, extStack: state.extStack.filter((r) => r.id !== action.id) };
-    case "composer_text":
-      return { ...state, composerText: action.text };
     case "session_name":
       return { ...state, sessionName: action.name };
     case "stopping":
@@ -480,7 +475,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               addNotice(request.notifyType ?? "info", request.message ?? "", "extension");
               break;
             case "set_editor_text":
-              dispatch({ type: "composer_text", text: request.text ?? "" });
+              setComposerText(request.text ?? "");
               break;
             case "setTitle":
               if (request.title) dispatch({ type: "session_name", name: request.title });
@@ -759,10 +754,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             addNotice("info", resp.data?.path ? storeT("notice.exportedTo", { path: resp.data.path }) : storeT("notice.exported"), "export");
           })
           .catch((err: unknown) => fail(err, "export"));
-      },
-
-      setComposerText(text: string) {
-        dispatch({ type: "composer_text", text });
       },
 
       dismissNotice(id: number) {

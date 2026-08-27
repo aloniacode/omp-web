@@ -1,8 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Dropdown } from "@heroui/react";
 import { useI18n } from "../i18n";
 import { useStore } from "../state/store";
+import {
+  getComposerText,
+  setComposerText,
+  subscribeComposerText,
+} from "../state/composerText";
 import type { ImageContent } from "../rpc/types";
 import { ModelPicker, ProjectPicker } from "./pickers";
 import { IconAtSign, IconImage, IconPlus, IconSend, IconSquare, IconX, IconZap } from "./icons";
@@ -82,6 +87,9 @@ function PlusMenu({ onPick, disabled }: { onPick: (kind: "file" | "skill" | "ima
 export function Composer() {
   const { t } = useI18n();
   const { state, actions } = useStore();
+  // Composer text is a dedicated external store: typing re-renders only
+  // this component instead of every store consumer.
+  const composerText = useSyncExternalStore(subscribeComposerText, getComposerText);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const filesCache = useRef<Map<string, string[]>>(new Map());
@@ -100,7 +108,7 @@ export function Composer() {
     if (!el) return;
     el.style.height = "0px";
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
-  }, [state.composerText]);
+  }, [composerText]);
 
   // Skill catalog is small: load once when a skill mention opens.
   useEffect(() => {
@@ -168,9 +176,9 @@ export function Composer() {
     const picked = options[Math.min(index, options.length - 1)];
     if (!picked) return;
     const insertion = mention.kind === "file" ? `@${picked} ` : `/${picked} `;
-    const text = state.composerText;
+    const text = composerText;
     const next = text.slice(0, mention.start) + insertion + text.slice(el.selectionStart ?? text.length);
-    actions.setComposerText(next);
+    setComposerText(next);
     setMention(null);
     requestAnimationFrame(() => {
       el.focus();
@@ -214,16 +222,16 @@ export function Composer() {
   };
 
   const submit = () => {
-    const text = state.composerText.trim();
+    const text = composerText.trim();
     if ((!text && attachments.length === 0) || !connected) return;
     if (text.startsWith("/") && runSlashCommand(text)) {
-      actions.setComposerText("");
+      setComposerText("");
       setAttachments([]);
       setMention(null);
       return;
     }
     actions.sendPrompt(text, attachmentsToContent(attachments));
-    actions.setComposerText("");
+    setComposerText("");
     setAttachments([]);
     setMention(null);
   };
@@ -263,17 +271,17 @@ export function Composer() {
   };
 
   const onChange = (value: string) => {
-    actions.setComposerText(value);
+    setComposerText(value);
     detectMention(value, textareaRef.current?.selectionStart ?? value.length);
   };
 
   const openPicker = (kind: "file" | "skill") => {
     const el = textareaRef.current;
     el?.focus();
-    const caret = el?.selectionStart ?? state.composerText.length;
-    const text = state.composerText;
+    const caret = el?.selectionStart ?? composerText.length;
+    const text = composerText;
     const next = `${text.slice(0, caret)}${kind === "file" ? "@" : "/"}${text.slice(caret)}`;
-    actions.setComposerText(next);
+    setComposerText(next);
     const triggerStart = caret;
     requestAnimationFrame(() => {
       el?.setSelectionRange(triggerStart + 1, triggerStart + 1);
@@ -389,7 +397,7 @@ export function Composer() {
           <textarea
             ref={textareaRef}
             rows={1}
-            value={state.composerText}
+            value={composerText}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
             onBlur={() => {
@@ -413,7 +421,7 @@ export function Composer() {
             <button
               type="button"
               onClick={submit}
-              disabled={(!state.composerText.trim() && attachments.length === 0) || !connected}
+              disabled={(!composerText.trim() && attachments.length === 0) || !connected}
               title={t("composer.send")}
               className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
