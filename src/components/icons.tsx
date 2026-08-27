@@ -236,6 +236,15 @@ export function IconFolder({ className, size }: IconProps) {
   );
 }
 
+export function IconArrowUp({ className, size }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <path d="m5 12 7-7 7 7" />
+      <path d="M12 19V5" />
+    </svg>
+  );
+}
+
 export function IconPin({ className, size, filled }: IconProps & { filled?: boolean }) {
   return (
     <svg {...svgProps(size)} className={className} fill={filled ? "currentColor" : "none"}>

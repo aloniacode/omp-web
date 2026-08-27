@@ -335,6 +335,31 @@ function sendJson(res, status, body) {
   res.end(payload);
 }
 
+/**
+ * Top-level listing for the project picker's filesystem browser.
+ * Windows: available drive letters. POSIX: home + common roots.
+ */
+async function fsRoots() {
+  const entries = [];
+  if (process.platform === "win32") {
+    for (let code = 65; code <= 90; code += 1) {
+      const drive = `${String.fromCharCode(code)}:\\`;
+      try {
+        await fsp.access(drive);
+        entries.push({ name: drive, path: drive });
+      } catch {}
+    }
+  } else {
+    for (const dir of [os.homedir(), "/"]) {
+      try {
+        const stat = await fsp.stat(dir);
+        if (stat.isDirectory()) entries.push({ name: dir, path: dir });
+      } catch {}
+    }
+  }
+  return { path: "", parent: null, entries };
+}
+
 function whichOmp() {
   const exts = process.platform === "win32" ? (process.env.PATHEXT ?? ".exe").split(";") : [""];
   for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
@@ -394,6 +419,32 @@ const server = http.createServer(async (req, res) => {
         projects.unshift({ cwd: ompCwd, sessions: 0, lastUsedMs: 0 });
       }
       return sendJson(res, 200, { projects, current: ompCwd });
+    }
+    if (url.pathname === "/api/fs" && req.method === "GET") {
+      const requested = (url.searchParams.get("path") ?? "").trim();
+      if (!requested) return sendJson(res, 200, await fsRoots());
+      const dir = path.resolve(requested);
+      let stat;
+      try {
+        stat = await fsp.stat(dir);
+      } catch {
+        return sendJson(res, 400, { error: `directory not found: ${dir}` });
+      }
+      if (!stat.isDirectory()) return sendJson(res, 400, { error: `not a directory: ${dir}` });
+      const entries = [];
+      for (const entry of await fsp.readdir(dir, { withFileTypes: true })) {
+        if (entry.name.startsWith(".")) continue;
+        if (entry.isDirectory() || entry.isSymbolicLink()) {
+          entries.push({ name: entry.name, path: path.join(dir, entry.name) });
+        }
+      }
+      entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+      const parent = path.dirname(dir);
+      return sendJson(res, 200, {
+        path: dir,
+        parent: parent === dir ? null : parent,
+        entries,
+      });
     }
     if (url.pathname === "/api/cwd" && req.method === "POST") {
       const body = await readJsonBody(req);

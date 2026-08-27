@@ -6,7 +6,7 @@ import { useActions, useAppStore } from "../state/store";
 import { useI18n } from "../i18n";
 import type { ModelInfo } from "../rpc/types";
 import { THINKING_LEVELS } from "../rpc/types";
-import { IconChevronDown, IconFolder } from "./icons";
+import { IconArrowUp, IconChevronDown, IconFolder } from "./icons";
 
 export function modelLabel(model: ModelInfo | undefined): string {
   if (!model) return "model";
@@ -115,16 +115,27 @@ function normPath(p: string): string {
   return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
+/** One directory level from the bridge's /api/fs browser. */
+interface FsDir {
+  /** Absolute path; "" while at the roots view (drives / home). */
+  path: string;
+  parent: string | null;
+  entries: Array<{ name: string; path: string }>;
+}
+
 /**
- * Project directory switcher (/api/projects → /api/cwd) with search and
- * custom-path entry. Switching disposes the agent child bridge-side; the
- * client reconnects into the new cwd.
+ * Project directory switcher (/api/projects → /api/cwd) with search,
+ * custom-path entry, and a device-filesystem browser (/api/fs). Switching
+ * disposes the agent child bridge-side; the client reconnects into the
+ * new cwd.
  */
 export function ProjectPicker() {
   const actions = useActions();
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [browse, setBrowse] = useState<FsDir | null>(null);
+  const [browseError, setBrowseError] = useState(false);
   const projects = useAppStore(useShallow((s) => s.projects));
   const current = useAppStore((s) => s.projectCwd ?? s.health?.ompCwd) ?? "";
 
@@ -141,11 +152,30 @@ export function ProjectPicker() {
   const close = () => {
     setOpen(false);
     setQuery("");
+    setBrowse(null);
+    setBrowseError(false);
   };
 
   const commit = (cwd: string) => {
     if (cwd) actions.switchProject(cwd);
     close();
+  };
+
+  const openFs = async (dir: string) => {
+    setBrowseError(false);
+    setBrowse({ path: dir, parent: null, entries: [] });
+    try {
+      const res = await fetch(`/api/fs?path=${encodeURIComponent(dir)}`);
+      const body = (await res.json()) as Partial<FsDir> & { error?: string };
+      if (!res.ok) throw new Error(body.error ?? "fs error");
+      setBrowse({
+        path: body.path ?? dir,
+        parent: body.parent ?? null,
+        entries: Array.isArray(body.entries) ? body.entries : [],
+      });
+    } catch {
+      setBrowseError(true);
+    }
   };
 
   const onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -167,52 +197,114 @@ export function ProjectPicker() {
       </Dropdown.Trigger>
       <Dropdown.Popover placement="top start">
         <div className="w-80 p-2">
-          <input
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onSearchKeyDown}
-            placeholder={t("picker.searchProjects")}
-            className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-zinc-400 focus:border-accent dark:border-zinc-700 dark:bg-zinc-900"
-          />
-          <div className="mt-1 max-h-60 overflow-y-auto">
-            {filtered.map((project) => (
+          {browse === null ? (
+            <>
+              <div className="flex gap-1.5">
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={onSearchKeyDown}
+                  placeholder={t("picker.searchProjects")}
+                  className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-zinc-400 focus:border-accent dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                <button
+                  type="button"
+                  onClick={() => void openFs("")}
+                  title={t("picker.browseDevice")}
+                  className="flex shrink-0 items-center gap-1 rounded-lg border border-zinc-200 px-2 text-[11.5px] font-medium text-zinc-500 transition-colors hover:border-accent hover:text-accent dark:border-zinc-700 dark:text-zinc-400"
+                >
+                  <IconFolder size={12} className="shrink-0" />
+                  {t("picker.browse")}
+                </button>
+              </div>
+              <div className="mt-1 max-h-60 overflow-y-auto">
+                {filtered.map((project) => (
+                  <button
+                    key={project.cwd}
+                    type="button"
+                    onClick={() => commit(project.cwd)}
+                    className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  >
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate text-[12.5px] text-zinc-700 dark:text-zinc-200">
+                        {dirName(project.cwd)}
+                      </span>
+                      <span className="truncate font-mono text-[10.5px] text-zinc-400">{project.cwd}</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {project.sessions > 0 && (
+                        <span className="text-[10.5px] text-zinc-400">{project.sessions}</span>
+                      )}
+                      {project.cwd === current && <span className="text-accent">●</span>}
+                    </span>
+                  </button>
+                ))}
+                {custom && (
+                  <button
+                    type="button"
+                    onClick={() => commit(custom)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  >
+                    <IconFolder size={13} className="shrink-0 text-accent" />
+                    <span className="truncate text-[12.5px] text-accent">
+                      {t("picker.useCustom", { path: custom })}
+                    </span>
+                  </button>
+                )}
+                {filtered.length === 0 && !custom && (
+                  <p className="px-2.5 py-3 text-center text-[12px] text-zinc-400">{t("picker.noProjects")}</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={!browse.parent}
+                  onClick={() => browse.parent && void openFs(browse.parent)}
+                  title={t("picker.up")}
+                  className="flex size-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                >
+                  <IconArrowUp size={13} />
+                </button>
+                <span
+                  className="min-w-0 flex-1 truncate rounded-lg bg-zinc-100 px-2 py-1.5 font-mono text-[11px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                  title={browse.path || "/"}
+                >
+                  {browse.path || "/"}
+                </span>
+              </div>
+              <div className="mt-1 max-h-56 overflow-y-auto">
+                {browseError ? (
+                  <p className="px-2.5 py-3 text-center text-[12px] text-red-500">{t("picker.fsError")}</p>
+                ) : browse.entries.length === 0 ? (
+                  <p className="px-2.5 py-3 text-center text-[12px] text-zinc-400">{t("picker.emptyFolder")}</p>
+                ) : (
+                  browse.entries.map((entry) => (
+                    <button
+                      key={entry.path}
+                      type="button"
+                      onClick={() => void openFs(entry.path)}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    >
+                      <IconFolder size={13} className="shrink-0 text-zinc-400" />
+                      <span className="truncate text-[12.5px] text-zinc-700 dark:text-zinc-200">{entry.name}</span>
+                    </button>
+                  ))
+                )}
+              </div>
               <button
-                key={project.cwd}
                 type="button"
-                onClick={() => commit(project.cwd)}
-                className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                disabled={!browse.path}
+                onClick={() => commit(browse.path)}
+                className="mt-1 w-full rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate text-[12.5px] text-zinc-700 dark:text-zinc-200">
-                    {dirName(project.cwd)}
-                  </span>
-                  <span className="truncate font-mono text-[10.5px] text-zinc-400">{project.cwd}</span>
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  {project.sessions > 0 && (
-                    <span className="text-[10.5px] text-zinc-400">{project.sessions}</span>
-                  )}
-                  {project.cwd === current && <span className="text-accent">●</span>}
-                </span>
+                {t("picker.useFolder")}
               </button>
-            ))}
-            {custom && (
-              <button
-                type="button"
-                onClick={() => commit(custom)}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              >
-                <IconFolder size={13} className="shrink-0 text-accent" />
-                <span className="truncate text-[12.5px] text-accent">
-                  {t("picker.useCustom", { path: custom })}
-                </span>
-              </button>
-            )}
-            {filtered.length === 0 && !custom && (
-              <p className="px-2.5 py-3 text-center text-[12px] text-zinc-400">{t("picker.noProjects")}</p>
-            )}
-          </div>
+            </>
+          )}
         </div>
       </Dropdown.Popover>
     </Dropdown>
