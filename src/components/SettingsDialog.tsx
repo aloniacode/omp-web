@@ -215,12 +215,40 @@ function WebSettings() {
   );
 }
 
-// ── OMP settings ────────────────────────────────────────────────────────────
+// ── OMP settings (mirrors omp TUI /settings tabs and groups) ───────────────
+
+const OMP_TABS = [
+  "appearance",
+  "model",
+  "interaction",
+  "context",
+  "memory",
+  "files",
+  "shell",
+  "tools",
+  "tasks",
+  "providers",
+] as const;
+type OmpTab = (typeof OMP_TABS)[number];
+
+const TAB_LABELS: Record<OmpTab, string> = {
+  appearance: "Appearance",
+  model: "Model",
+  interaction: "Interaction",
+  context: "Context",
+  memory: "Memory",
+  files: "Files",
+  shell: "Shell",
+  tools: "Tools",
+  tasks: "Tasks",
+  providers: "Providers",
+};
 
 function OmpSettings({ autoRetry, onAutoRetryChange }: { autoRetry: boolean; onAutoRetryChange: (v: boolean) => void }) {
   const { t } = useI18n();
   const { state, actions } = useStore();
   const s = state.agentState;
+  const [tab, setTab] = useState<OmpTab>("model");
   const [nameDraft, setNameDraft] = useState<string | null>(null);
 
   const queueOptions = [
@@ -234,123 +262,165 @@ function OmpSettings({ autoRetry, onAutoRetryChange }: { autoRetry: boolean; onA
   const thinkingOptions = THINKING_LEVELS.map((level) => ({ id: level, label: level }));
 
   return (
-    <>
-      <Section title={t("settings.omp.model")}>
-        <Row label={t("settings.omp.model")}>
-          <span className="font-mono text-[12px] text-zinc-500 dark:text-zinc-400">
-            {s?.model ? `${s.model.provider}/${s.model.id}` : "—"}
-          </span>
-        </Row>
-        <Row label={t("settings.omp.thinking")}>
-          <Select
-            value={s?.thinkingLevel ?? "off"}
-            options={thinkingOptions}
-            onChange={(id) => actions.setThinkingLevel(id)}
-          />
-        </Row>
-      </Section>
-
-      <Section title={t("settings.omp.queueing")}>
-        <Row label={t("settings.omp.steering")}>
-          <Select
-            value={s?.steeringMode ?? "one-at-a-time"}
-            options={queueOptions}
-            onChange={(id) => actions.setSteeringMode(id as "all" | "one-at-a-time")}
-          />
-        </Row>
-        <Row label={t("settings.omp.followUp")}>
-          <Select
-            value={s?.followUpMode ?? "one-at-a-time"}
-            options={queueOptions}
-            onChange={(id) => actions.setFollowUpMode(id as "all" | "one-at-a-time")}
-          />
-        </Row>
-        <Row label={t("settings.omp.interrupt")}>
-          <Select
-            value={s?.interruptMode ?? "immediate"}
-            options={interruptOptions}
-            onChange={(id) => actions.setInterruptMode(id as "immediate" | "wait")}
-          />
-        </Row>
-      </Section>
-
-      <Section title={t("settings.omp.runtime")}>
-        <Row label={t("settings.omp.fastMode")} hint={t("settings.omp.fastModeHint")}>
-          <Toggle
-            checked={Boolean(s?.fastModeEnabled)}
-            onChange={(v) => actions.setFastMode(v)}
-            label={t("settings.omp.fastMode")}
-          />
-        </Row>
-        <Row label={t("settings.omp.autoCompaction")} hint={t("settings.omp.autoCompactionHint")}>
-          <Toggle
-            checked={Boolean(s?.autoCompactionEnabled)}
-            onChange={(v) => actions.setAutoCompaction(v)}
-            label={t("settings.omp.autoCompaction")}
-          />
-        </Row>
-        <Row label={t("settings.omp.compactNow")}>
+    <div className="flex gap-4">
+      {/* Tab rail - mirrors omp's settings tab bar */}
+      <div className="w-32 shrink-0 space-y-0.5">
+        {OMP_TABS.map((id) => (
           <button
+            key={id}
             type="button"
-            onClick={actions.compact}
-            disabled={!state.agentReady || Boolean(s?.isCompacting)}
-            className="rounded-lg border border-zinc-200 px-2.5 py-1 text-[12px] font-medium text-zinc-600 hover:border-accent hover:text-accent disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300"
+            onClick={() => setTab(id)}
+            className={`block w-full rounded-lg px-2.5 py-1.5 text-left text-[12.5px] font-medium transition-colors ${
+              tab === id
+                ? "bg-accent/10 text-accent"
+                : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            }`}
           >
-            {s?.isCompacting ? t("settings.omp.compacting") : t("settings.omp.compactNow")}
+            {TAB_LABELS[id]}
           </button>
-        </Row>
-        <Row label={t("settings.omp.autoRetry")} hint={t("settings.omp.autoRetryHint")}>
-          <Toggle
-            checked={autoRetry}
-            onChange={(v) => {
-              onAutoRetryChange(v);
-              actions.setAutoRetry(v);
-            }}
-            label={t("settings.omp.autoRetry")}
-          />
-        </Row>
-      </Section>
+        ))}
+      </div>
 
-      <Section title={t("settings.omp.session")}>
-        <Row label={t("settings.omp.sessionName")}>
-          <input
-            value={nameDraft ?? state.sessionName ?? ""}
-            onChange={(e) => setNameDraft(e.target.value)}
-            onBlur={() => {
-              if (nameDraft != null && nameDraft.trim() && nameDraft.trim() !== state.sessionName) {
-                actions.renameSession(nameDraft.trim());
-              }
-              setNameDraft(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-            }}
-            placeholder="—"
-            className="w-44 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[12.5px] outline-none focus:border-accent dark:border-zinc-700 dark:bg-zinc-900"
-          />
-        </Row>
-        <Row label={t("settings.omp.sessionId")}>
-          <span className="font-mono text-[12px] text-zinc-500 dark:text-zinc-400">{state.sessionId ?? "—"}</span>
-        </Row>
-        <Row label={t("settings.omp.sessionFile")}>
-          <span
-            className="block max-w-56 truncate font-mono text-[11.5px] text-zinc-400 dark:text-zinc-500"
-            title={state.activePath ?? ""}
-          >
-            {state.activePath ?? "—"}
-          </span>
-        </Row>
-        <Row label={t("settings.omp.exportHtml")} hint={t("settings.omp.exportHint")}>
-          <button
-            type="button"
-            onClick={actions.exportHtml}
-            disabled={!state.agentReady}
-            className="rounded-lg border border-zinc-200 px-2.5 py-1 text-[12px] font-medium text-zinc-600 hover:border-accent hover:text-accent disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300"
-          >
-            {t("settings.omp.exportHtml")}
-          </button>
-        </Row>
-      </Section>
-    </>
+      {/* Active tab content */}
+      <div className="min-w-0 flex-1 space-y-5">
+        {tab === "model" && (
+          <>
+            <Section title="Thinking">
+              <Row label={t("settings.omp.thinking")}>
+                <Select
+                  value={s?.thinkingLevel ?? "off"}
+                  options={thinkingOptions}
+                  onChange={(id) => actions.setThinkingLevel(id)}
+                />
+              </Row>
+              <Row label={t("settings.omp.model")}>
+                <span className="font-mono text-[12px] text-zinc-500 dark:text-zinc-400">
+                  {s?.model ? `${s.model.provider}/${s.model.id}` : "—"}
+                </span>
+              </Row>
+            </Section>
+            <Section title="Retry & Fallback">
+              <Row label={t("settings.omp.autoRetry")} hint={t("settings.omp.autoRetryHint")}>
+                <Toggle
+                  checked={autoRetry}
+                  onChange={(v) => {
+                    onAutoRetryChange(v);
+                    actions.setAutoRetry(v);
+                  }}
+                  label={t("settings.omp.autoRetry")}
+                />
+              </Row>
+            </Section>
+          </>
+        )}
+
+        {tab === "interaction" && (
+          <Section title="Input">
+            <Row label={t("settings.omp.steering")}>
+              <Select
+                value={s?.steeringMode ?? "one-at-a-time"}
+                options={queueOptions}
+                onChange={(id) => actions.setSteeringMode(id as "all" | "one-at-a-time")}
+              />
+            </Row>
+            <Row label={t("settings.omp.followUp")}>
+              <Select
+                value={s?.followUpMode ?? "one-at-a-time"}
+                options={queueOptions}
+                onChange={(id) => actions.setFollowUpMode(id as "all" | "one-at-a-time")}
+              />
+            </Row>
+            <Row label={t("settings.omp.interrupt")}>
+              <Select
+                value={s?.interruptMode ?? "immediate"}
+                options={interruptOptions}
+                onChange={(id) => actions.setInterruptMode(id as "immediate" | "wait")}
+              />
+            </Row>
+          </Section>
+        )}
+
+        {tab === "context" && (
+          <Section title="Compaction">
+            <Row label={t("settings.omp.autoCompaction")} hint={t("settings.omp.autoCompactionHint")}>
+              <Toggle
+                checked={Boolean(s?.autoCompactionEnabled)}
+                onChange={(v) => actions.setAutoCompaction(v)}
+                label={t("settings.omp.autoCompaction")}
+              />
+            </Row>
+            <Row label={t("settings.omp.compactNow")}>
+              <button
+                type="button"
+                onClick={actions.compact}
+                disabled={!state.agentReady || Boolean(s?.isCompacting)}
+                className="rounded-lg border border-zinc-200 px-2.5 py-1 text-[12px] font-medium text-zinc-600 hover:border-accent hover:text-accent disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300"
+              >
+                {s?.isCompacting ? t("settings.omp.compacting") : t("settings.omp.compactNow")}
+              </button>
+            </Row>
+          </Section>
+        )}
+
+        {tab === "providers" && (
+          <Section title="Services">
+            <Row label={t("settings.omp.fastMode")} hint={t("settings.omp.fastModeHint")}>
+              <Toggle
+                checked={Boolean(s?.fastModeEnabled)}
+                onChange={(v) => actions.setFastMode(v)}
+                label={t("settings.omp.fastMode")}
+              />
+            </Row>
+          </Section>
+        )}
+
+        {!["model", "interaction", "context", "providers"].includes(tab) && (
+          <p className="py-6 text-center text-[12px] text-zinc-400 dark:text-zinc-500">
+            {t("settings.omp.remoteOnlyHint", { tab: TAB_LABELS[tab] })}
+          </p>
+        )}
+
+        <Section title="Session">
+          <Row label={t("settings.omp.sessionName")}>
+            <input
+              value={nameDraft ?? state.sessionName ?? ""}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={() => {
+                if (nameDraft != null && nameDraft.trim() && nameDraft.trim() !== state.sessionName) {
+                  actions.renameSession(nameDraft.trim());
+                }
+                setNameDraft(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              placeholder="—"
+              className="w-44 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[12.5px] outline-none focus:border-accent dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          </Row>
+          <Row label={t("settings.omp.sessionId")}>
+            <span className="font-mono text-[12px] text-zinc-500 dark:text-zinc-400">{state.sessionId ?? "—"}</span>
+          </Row>
+          <Row label={t("settings.omp.sessionFile")}>
+            <span
+              className="block max-w-52 truncate font-mono text-[11.5px] text-zinc-400 dark:text-zinc-500"
+              title={state.activePath ?? ""}
+            >
+              {state.activePath ?? "—"}
+            </span>
+          </Row>
+          <Row label={t("settings.omp.exportHtml")} hint={t("settings.omp.exportHint")}>
+            <button
+              type="button"
+              onClick={actions.exportHtml}
+              disabled={!state.agentReady}
+              className="rounded-lg border border-zinc-200 px-2.5 py-1 text-[12px] font-medium text-zinc-600 hover:border-accent hover:text-accent disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300"
+            >
+              {t("settings.omp.exportHtml")}
+            </button>
+          </Row>
+        </Section>
+      </div>
+    </div>
   );
 }
