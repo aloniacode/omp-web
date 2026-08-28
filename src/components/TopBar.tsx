@@ -13,51 +13,12 @@ import { useActions, useAppStore } from "../state/store";
 import type { SessionMeta } from "../rpc/types";
 import { DeleteDialog, RenameDialog } from "./Sidebar";
 import { isPinned, togglePin } from "../lib/pins";
-import { fmtCost, fmtPercent, fmtTokens } from "../lib/format";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-
-/** Centered conversation usage cluster: tokens · cost · context. */
-function UsageCluster() {
-  const { t } = useI18n();
-  const usage = useAppStore((s) => s.stats);
-  const context = useAppStore((s) => s.agentState?.contextUsage);
-  if (!usage) return null;
-  const ctxHot = context != null && context.percent >= 80;
-  return (
-    <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full bg-zinc-100/80 px-3 py-1 text-[11px] font-medium tabular-nums text-zinc-500 md:flex dark:bg-zinc-800/70 dark:text-zinc-400">
-      <span title={t("composer.usageTotal", { tokens: usage.tokens.total })}>
-        {fmtTokens(usage.tokens.total)}
-        <span className="ml-0.5 text-zinc-400 dark:text-zinc-500">tok</span>
-      </span>
-      <span aria-hidden className="text-zinc-300 dark:text-zinc-600">
-        ·
-      </span>
-      <span title={t("composer.usageCost")}>{fmtCost(usage.cost)}</span>
-      {context && context.contextWindow > 0 && (
-        <>
-          <span aria-hidden className="text-zinc-300 dark:text-zinc-600">
-            ·
-          </span>
-          <span
-            className={ctxHot ? "text-amber-600 dark:text-amber-400" : undefined}
-            title={t("composer.usageContext", {
-              used: fmtTokens(context.tokens),
-              window: fmtTokens(context.contextWindow),
-              percent: fmtPercent(context.percent),
-            })}
-          >
-            ctx {fmtPercent(context.percent)}
-          </span>
-        </>
-      )}
-    </div>
-  );
-}
 
 /** More-actions menu for the active session: rename, pin, compact, export, delete. */
 function SessionMenu({ session }: { session: SessionMeta | null }) {
@@ -164,8 +125,6 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       </h1>
 
       <SessionMenu session={activeSession} />
-
-      <UsageCluster />
     </header>
   );
 }

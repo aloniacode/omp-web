@@ -80,6 +80,13 @@ export const messages = {
     "composer.usageCost": "estimated conversation cost",
     "composer.usageContext": "Context: {used} / {window} tokens ({percent})",
 
+    "context.title": "Context usage",
+    "context.used": "Used",
+    "context.window": "Context window",
+    "context.available": "Available",
+    "context.totalTokens": "Total tokens",
+    "context.cost": "Cost",
+
     "message.thinking": "☁️ Thinking…",
     "message.thoughtDone": "☁️ Thought",
     "message.turnSummary": "⚡ Ran {steps} steps",
@@ -248,6 +255,13 @@ export const messages = {
     "composer.usageTotal": "{tokens} tokens",
     "composer.usageCost": "对话预估费用",
     "composer.usageContext": "上下文：{used} / {window} tokens（{percent}）",
+
+    "context.title": "上下文用量",
+    "context.used": "已用",
+    "context.window": "上下文窗口",
+    "context.available": "剩余",
+    "context.totalTokens": "总 token 消耗",
+    "context.cost": "费用",
 
     "message.thinking": "☁️ 思考中…",
     "message.thoughtDone": "☁️ 已思考",

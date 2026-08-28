@@ -18,6 +18,7 @@ import {
 } from "../state/composerText";
 import type { ImageContent } from "../rpc/types";
 import { ModelPicker, ProjectPicker } from "./pickers";
+import { ContextDisplay } from "./ContextDisplay";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -443,6 +444,7 @@ export function Composer() {
             <PlusMenu onPick={onPlusPick} disabled={!connected} />
             <ProjectPicker />
             <ModelPicker compact />
+            <ContextDisplay />
             <div className="min-w-0 flex-1" />
             {stopping || isStreaming ? (
               <Button
