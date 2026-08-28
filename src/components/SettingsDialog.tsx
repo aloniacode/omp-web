@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check as IconCheck, ChevronDown as IconChevronDown, X as IconX } from "lucide-react";
+import { Check as IconCheck, ChevronDown as IconChevronDown, ExternalLink as IconExternalLink, X as IconX } from "lucide-react";
 import { useI18n } from "../i18n";
 import { useTheme, ACCENTS, type ThemePref } from "../lib/theme";
 import { useActions, useAppStore } from "../state/store";
@@ -221,6 +221,17 @@ function WebSettings() {
       <Section title={t("settings.about")}>
         <Row label={t("settings.version")}>
           <span className="font-mono text-[12px] text-zinc-500 dark:text-zinc-400">v{__APP_VERSION__}</span>
+        </Row>
+        <Row label={t("settings.githubRepo")}>
+          <a
+            href="https://github.com/aloniacode/omp-web"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1 text-[12px] font-medium text-zinc-600 transition-colors hover:border-accent hover:text-accent dark:border-zinc-700 dark:text-zinc-300"
+          >
+            aloniacode/omp-web
+            <IconExternalLink size={12} className="shrink-0 opacity-60" />
+          </a>
         </Row>
       </Section>
     </>

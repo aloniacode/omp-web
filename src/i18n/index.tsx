@@ -140,6 +140,7 @@ export const messages = {
 
     "settings.about": "About",
     "settings.version": "Version",
+    "settings.githubRepo": "GitHub repository",
 
     "settings.omp.model": "Model",
     "settings.omp.thinking": "Thinking level",
@@ -282,6 +283,7 @@ export const messages = {
 
     "settings.about": "关于",
     "settings.version": "版本",
+    "settings.githubRepo": "GitHub 仓库",
 
     "settings.omp.model": "模型",
     "settings.omp.thinking": "思考等级",
