@@ -2,44 +2,97 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ── Local font: Maple Mono NL NF CN ────────────────────────────────────────
- * Bundled in src/assets/fonts (no ligatures, nerd-font icons, CJK glyphs).
- * Registered per weight with swap so first paint never blocks. */
+/* ── Local fonts (src/assets/fonts, no CDN) ──────────────────────────────────
+ * Inter      — latin UI text (variable, weight + optical size axes)
+ * HarmonyOS Sans SC — CJK glyphs, registered per weight
+ * Maple Mono — code / monospace contexts
+ * All registered with swap so first paint never blocks. */
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./assets/fonts/Inter/Inter-VariableFont_opsz,wght.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  font-style: normal;
+  font-weight: 100;
+  font-display: swap;
+  src: url("./assets/fonts/HarmonyOS_Sans_SC/HarmonyOS_Sans_SC_Thin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url("./assets/fonts/HarmonyOS_Sans_SC/HarmonyOS_Sans_SC_Light.woff2") format("woff2");
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/HarmonyOS_Sans_SC/HarmonyOS_Sans_SC_Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./assets/fonts/HarmonyOS_Sans_SC/HarmonyOS_Sans_SC_Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./assets/fonts/HarmonyOS_Sans_SC/HarmonyOS_Sans_SC_Bold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  src: url("./assets/fonts/HarmonyOS_Sans_SC/HarmonyOS_Sans_SC_Black.woff2") format("woff2");
+}
 
 @font-face {
   font-family: "Maple Mono NL NF CN";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url("./assets/fonts/MapleMonoNL-NF-CN-Regular.woff2") format("woff2");
+  src: url("./assets/fonts/MapleMono/MapleMonoNL-NF-CN-Regular.woff2") format("woff2");
 }
 @font-face {
   font-family: "Maple Mono NL NF CN";
   font-style: normal;
   font-weight: 500;
   font-display: swap;
-  src: url("./assets/fonts/MapleMonoNL-NF-CN-Medium.woff2") format("woff2");
+  src: url("./assets/fonts/MapleMono/MapleMonoNL-NF-CN-Medium.woff2") format("woff2");
 }
 @font-face {
   font-family: "Maple Mono NL NF CN";
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url("./assets/fonts/MapleMonoNL-NF-CN-SemiBold.woff2") format("woff2");
+  src: url("./assets/fonts/MapleMono/MapleMonoNL-NF-CN-SemiBold.woff2") format("woff2");
 }
 @font-face {
   font-family: "Maple Mono NL NF CN";
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url("./assets/fonts/MapleMonoNL-NF-CN-Bold.woff2") format("woff2");
+  src: url("./assets/fonts/MapleMono/MapleMonoNL-NF-CN-Bold.woff2") format("woff2");
 }
 @font-face {
   font-family: "Maple Mono NL NF CN";
   font-style: italic;
   font-weight: 400;
   font-display: swap;
-  src: url("./assets/fonts/MapleMonoNL-NF-CN-Italic.woff2") format("woff2");
+  src: url("./assets/fonts/MapleMono/MapleMonoNL-NF-CN-Italic.woff2") format("woff2");
 }
 
 /* ── Accent presets ─────────────────────────────────────────────────────────
@@ -72,8 +125,9 @@
 }
 
 @theme {
-  /* Maple Mono for both sans and mono stacks: it is the app's UI font. */
-  --font-sans: "Maple Mono NL NF CN", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  /* Latin first, CJK fallback: Inter renders latin/digits, HarmonyOS Sans SC
+   * picks up the CJK glyphs Inter lacks. Maple Mono stays code-only. */
+  --font-sans: "Inter", "HarmonyOS Sans SC", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   --font-mono: "Maple Mono NL NF CN", ui-monospace, "Cascadia Code", Consolas, monospace;
 }
 
@@ -234,7 +288,7 @@ body,
 
 body {
   margin: 0;
-  font-family: "Maple Mono NL NF CN", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  font-family: "Inter", "HarmonyOS Sans SC", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   overscroll-behavior: none;
 }
 
