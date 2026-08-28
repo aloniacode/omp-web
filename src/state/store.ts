@@ -93,6 +93,8 @@ export interface StoreActions {
   compact(customInstructions?: string): void;
   respondExtUi(request: ExtensionUiRequest, outcome: ExtOutcome): void;
   dismissNotice(id: number): void;
+  /** Surface a toast to the user (e.g. rejected paste feedback). */
+  notify(level: UiNotice["level"], message: string, source?: string): void;
   recheckHealth(): Promise<boolean>;
   refreshSessions(): void;
   setModel(provider: string, modelId: string): void;
@@ -645,6 +647,10 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
 
     dismissNotice(id: number) {
       set((state) => ({ notices: state.notices.filter((n) => n.id !== id) }));
+    },
+
+    notify(level: UiNotice["level"], message: string, source?: string) {
+      addNotice(level, message, source);
     },
 
     refreshSessions,

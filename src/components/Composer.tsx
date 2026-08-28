@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { ClipboardEvent as ReactClipboardEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   AtSign as IconAtSign,
   Image as IconImage,
@@ -91,6 +91,14 @@ export function Composer() {
   const connected = useAppStore((s) => s.connStatus === "connected" && s.agentReady);
   const stopping = useAppStore((s) => s.stopping);
   const isStreaming = useAppStore((s) => Boolean(s.agentState?.isStreaming));
+  // Explicitly non-vision current model (agent state first, then the model
+  // catalog): only rejects when known to lack image support.
+  const visionBlocked = useAppStore((s) => {
+    const model = s.agentState?.model;
+    if (model?.vision === false) return true;
+    const listed = model ? s.models.find((m) => m.provider === model.provider && m.id === model.id) : undefined;
+    return listed?.vision === false;
+  });
   // Composer text is a dedicated external store: typing re-renders only
   // this component instead of every store consumer.
   const composerText = useSyncExternalStore(subscribeComposerText, getComposerText);
@@ -300,18 +308,36 @@ export function Composer() {
     openPicker(kind);
   };
 
-  const onImagesPicked = async (files: FileList | null) => {
-    if (!files) return;
+  /** Shared image intake (paste + file picker): rejects with a toast when
+   *  the current model has no vision support. */
+  const acceptImages = async (files: File[]) => {
+    const images = files.filter((file) => file.type.startsWith("image/"));
+    if (images.length === 0) return;
+    if (visionBlocked) {
+      actions.notify("warning", t("composer.imageRejected"));
+      return;
+    }
     const picked: Attachment[] = [];
-    for (const file of Array.from(files)) {
-      if (!file.type.startsWith("image/")) continue;
+    for (const file of images) {
       try {
         picked.push(await readImage(file));
       } catch {
         // skip unreadable file
       }
     }
-    setAttachments((current) => [...current, ...picked]);
+    if (picked.length > 0) setAttachments((current) => [...current, ...picked]);
+  };
+
+  const onPaste = (event: ReactClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(event.clipboardData.files ?? []);
+    if (!files.some((file) => file.type.startsWith("image/"))) return; // plain text paste
+    event.preventDefault();
+    void acceptImages(files);
+  };
+
+  const onImagesPicked = async (files: FileList | null) => {
+    if (!files) return;
+    await acceptImages(Array.from(files));
   };
 
   return (
@@ -404,6 +430,7 @@ export function Composer() {
             value={composerText}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
             onBlur={() => {
               // Delay so mention clicks (mousedown) land first.
               setTimeout(() => setMention(null), 120);

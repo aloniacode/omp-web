@@ -139,6 +139,8 @@ export interface ModelInfo {
   contextWindow?: number;
   maxTokens?: number;
   reasoning?: boolean;
+  /** Model accepts image inputs. */
+  vision?: boolean;
   [k: string]: unknown;
 }
 
