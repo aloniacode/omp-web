@@ -5,3 +5,4 @@ dist
 shots/
 .pnpm-store/
 .pnpm-cache/
+.tmp-home/

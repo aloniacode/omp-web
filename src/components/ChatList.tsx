@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import type { ToolResultMessage } from "../rpc/types";
+import type { AssistantMessage, ToolResultMessage } from "../rpc/types";
 import { useAppStore } from "../state/store";
+import type { ChatEntry } from "../state/store";
 import { setComposerText } from "../state/composerText";
 import { useI18n } from "../i18n";
-import { MessageView, UserRow, type ChatEntryUser } from "./MessageView";
+import { MessageView, TurnRow } from "./MessageView";
 import { Bot as IconBot } from "lucide-react";
 import { ScrollArea } from "./ScrollArea";
 
@@ -124,33 +125,32 @@ export function ChatList() {
 
   const hasContent = messages.length > 0 || hasLiveContent;
 
+  // Group committed messages into turns: a user message opens a turn, and all
+  // following assistant messages (thinking / tool calls / partial answers)
+  // fold into one summary row once the turn is history.
+  const turns = useMemo(() => {
+    const groups: { key: string; user: ChatEntry | null; assistants: AssistantMessage[] }[] = [];
+    for (const entry of messages) {
+      if (entry.role === "user") {
+        groups.push({ key: `u${groups.length}`, user: entry, assistants: [] });
+      } else if (entry.role === "assistant") {
+        if (groups.length === 0) groups.push({ key: `u${groups.length}`, user: null, assistants: [] });
+        groups[groups.length - 1].assistants.push(entry);
+      }
+      // toolResult rows render inside assistant tool cards (resultsByCallId).
+    }
+    return groups;
+  }, [messages]);
+
   return (
     <ScrollArea className="min-h-0 flex-1" viewportClassName="px-4 py-5 sm:px-6" onScroll={onScroll} viewportRef={scrollRef}>
       {!hasContent ? (
         <EmptyState />
       ) : (
         <div className="mx-auto flex max-w-3xl flex-col gap-5">
-          {messages.map((entry, index) => {
-            if (entry.role === "user") {
-              return <UserRow key={`u${index}`} entry={entry as unknown as ChatEntryUser} />;
-            }
-            if (entry.role === "assistant") {
-              // A new turn begins right after a user message; continuation
-              // messages (thinking / tools / answer) render without avatar.
-              const previous = messages[index - 1];
-              const isTurnStart = index === 0 || previous?.role === "user";
-              return (
-                <MessageView
-                  key={`a${index}`}
-                  message={entry}
-                  resultsByCallId={resultsByCallId}
-                  isStreamingTurn={false}
-                  showAvatar={isTurnStart}
-                />
-              );
-            }
-            return null; // toolResult rows render inside assistant tool cards
-          })}
+          {turns.map((turn) => (
+            <TurnRow key={turn.key} user={turn.user} assistants={turn.assistants} resultsByCallId={resultsByCallId} />
+          ))}
 
           <StreamingRow resultsByCallId={resultsByCallId} />
           <WorkingRow />

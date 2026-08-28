@@ -40,7 +40,6 @@ export interface ToolRun {
   args?: Record<string, unknown>;
   status: "running" | "done" | "error";
   outputText: string;
-  images: ImageContent[];
   startedAt: number;
 }
 
@@ -142,20 +141,46 @@ export function isOptimistic(entry: ChatEntry): entry is OptimisticUserMessage {
   return "pending" in entry || "failed" in entry;
 }
 
-function textOfToolResult(result: ToolResultLike | undefined): { text: string; images: ImageContent[] } {
+function textOfToolResult(result: ToolResultLike | undefined): string {
   const blocks = result?.content;
-  if (!Array.isArray(blocks)) return { text: "", images: [] };
-  const images: ImageContent[] = [];
+  if (!Array.isArray(blocks)) return "";
   let text = "";
   for (const block of blocks) {
     if (block.type === "text") text += block.text;
-    else if (block.type === "image") images.push(block);
   }
-  return { text, images };
+  return text;
 }
 
 let noticeSeq = 1;
 let loadEpoch = 0;
+
+/**
+ * Structural sharing between consecutive streaming frames. Frames re-send the
+ * full accumulated message on every token; swapping in the previous frame's
+ * (deep-equal) block objects keeps prop identities stable so unchanged
+ * subtrees skip re-rendering entirely.
+ */
+function reconcileStream(prev: AssistantMessage | null, next: AssistantMessage): AssistantMessage {
+  if (!prev || prev === next || !Array.isArray(prev.content) || !Array.isArray(next.content)) return next;
+  if (next.content.length < prev.content.length) return next;
+  let shared = false;
+  const merged = next.content.map((block, index) => {
+    const old = prev.content[index];
+    if (old === block) return block;
+    if (old && old.type === block.type) {
+      try {
+        if (JSON.stringify(old) === JSON.stringify(block)) {
+          shared = true;
+          return old;
+        }
+      } catch {
+        // non-serializable block: fall through and keep the new object
+      }
+    }
+    return block;
+  });
+  return shared ? { ...next, content: merged } : next;
+}
 
 /** Module-scope singleton: one bridge connection for the whole app. */
 const client = new OmpRpcClient();
@@ -279,7 +304,11 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       case "message_end": {
         const stream = frame as SessionEventFrame & { message?: AssistantMessage };
         if (stream.message && stream.message.role === "assistant") {
-          set({ streamingMsg: stream.message, awaitingAgent: false });
+          // Reuse unchanged block objects between frames: every update frame
+          // carries the whole message, and without structural sharing each
+          // token would re-render (and re-parse markdown for) every earlier
+          // block of the streaming turn.
+          set({ streamingMsg: reconcileStream(get().streamingMsg, stream.message), awaitingAgent: false });
         }
         break;
       }
@@ -289,7 +318,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       case "tool_execution_end": {
         const tool = frame as ToolExecutionFrame;
         const payload = tool.result ?? tool.partialResult;
-        const { text, images } = textOfToolResult(payload);
+        const text = textOfToolResult(payload);
         const done = frame.type === "tool_execution_end";
         const run: ToolRun = {
           toolCallId: tool.toolCallId,
@@ -297,7 +326,6 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
           args: tool.args,
           status: done ? (tool.isError ? "error" : "done") : "running",
           outputText: text,
-          images,
           startedAt: Date.now(),
         };
         set((state) => ({

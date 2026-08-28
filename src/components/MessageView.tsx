@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Bot as IconBot, Check as IconCheck, ChevronRight } from "lucide-react";
 import type {
@@ -9,6 +9,7 @@ import type {
   ToolCall,
   ToolResultMessage,
 } from "../rpc/types";
+import type { ChatEntry } from "../state/store";
 import { fmtCost, fmtTokPerSec, fmtTokens, truncate, userText } from "../lib/format";
 import { useI18n } from "../i18n";
 import { Markdown } from "./Markdown";
@@ -20,11 +21,16 @@ import { Collapsible as CollapsibleRoot, CollapsibleContent, CollapsibleTrigger 
 function Collapsible({
   title,
   defaultOpen = false,
+  open,
+  onOpenChange,
   tone = "neutral",
   children,
 }: {
   title: ReactNode;
   defaultOpen?: boolean;
+  /** Controlled variant (auto-collapse-on-done behaviour). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   tone?: "neutral" | "dim" | "error";
   children: ReactNode;
 }) {
@@ -35,7 +41,7 @@ function Collapsible({
         ? "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60"
         : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900";
   return (
-    <CollapsibleRoot defaultOpen={defaultOpen} className={`overflow-hidden rounded-xl border ${toneClass}`}>
+    <CollapsibleRoot defaultOpen={defaultOpen} open={open} onOpenChange={onOpenChange} className={`overflow-hidden rounded-xl border ${toneClass}`}>
       <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">
         <ChevronRight
           size={14}
@@ -108,48 +114,33 @@ function ToolCard({ tool }: { tool: ToolView }) {
   );
 }
 
-// ── Turn summary (completed turns) ──────────────────────────────────────────
-
-function fmtDuration(ms: number): string {
-  const s = ms / 1000;
-  if (s < 60) return `${s < 10 ? s.toFixed(1) : Math.round(s)}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m ${Math.round(s % 60)}s`;
-}
-
-/**
- * Completed turns collapse their whole reasoning/tool process into one
- * summary row (codex-style): step count + elapsed time. Collapsed by
- * default, so large histories render far fewer nodes and one fold changing
- * no longer re-lays-out the whole conversation.
- */
-function TurnSummary({
-  message,
-  processCount,
-  children,
+function ConnectedToolCard({
+  call,
+  resultsByCallId,
 }: {
-  message: AssistantMessage;
-  processCount: number;
-  children: ReactNode;
+  call: ToolCall;
+  resultsByCallId: Map<string, ToolResultMessage>;
 }) {
-  const { t } = useI18n();
-  const duration = message.duration != null ? fmtDuration(message.duration) : null;
-  return (
-    <Collapsible
-      tone="dim"
-      title={
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="text-[12px] leading-none">⚡</span>
-          <span className="text-zinc-500 dark:text-zinc-400">
-            {t("message.turnSummary", { steps: processCount })}
-          </span>
-          {duration && <span className="shrink-0 text-[11.5px] tabular-nums text-zinc-400">{duration}</span>}
-        </span>
+  const liveRun = useAppStore((s) => s.toolRuns.find((run) => run.toolCallId === call.id));
+  const committedResult = resultsByCallId.get(call.id);
+  const view: ToolView = liveRun
+    ? {
+        name: liveRun.toolName,
+        args: liveRun.args ?? call.arguments,
+        status: liveRun.status,
+        outputText: liveRun.outputText,
       }
-    >
-      <div className="space-y-2">{children}</div>
-    </Collapsible>
-  );
+    : {
+        name: call.name,
+        args: call.arguments,
+        status: committedResult ? (committedResult.isError ? "error" : "done") : "running",
+        outputText:
+          committedResult?.content
+            .filter((b): b is TextContent => b.type === "text")
+            .map((b) => b.text)
+            .join("\n") ?? "",
+      };
+  return <ToolCard tool={view} />;
 }
 
 // ── Thinking block ──────────────────────────────────────────────────────────
@@ -158,15 +149,33 @@ function TurnSummary({
  *  characters in one <p> blocks layout for a visible moment. */
 const THINKING_PREVIEW_CHARS = 4_000;
 
+/**
+ * assistant-ui-style reasoning: open while the model is actively thinking,
+ * auto-collapses the moment it finishes. The user's manual toggle wins until
+ * the next streaming phase.
+ */
 function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(streaming);
+  const userToggled = useRef(false);
+
+  useEffect(() => {
+    if (!userToggled.current) setOpen(streaming);
+  }, [streaming]);
+
+  const handleOpenChange = (next: boolean) => {
+    userToggled.current = true;
+    setOpen(next);
+  };
+
   const clipped = !expanded && text.length > THINKING_PREVIEW_CHARS;
   const shown = clipped ? text.slice(0, THINKING_PREVIEW_CHARS) : text;
   return (
     <Collapsible
       tone="dim"
-      defaultOpen={false}
+      open={open}
+      onOpenChange={handleOpenChange}
       title={
         <span className="flex items-center gap-2">
           <span className="text-[13px] leading-none">☁️</span>
@@ -220,6 +229,50 @@ function UsageChips({ message }: { message: AssistantMessage }) {
   );
 }
 
+// ── Block rendering (shared by the live view and turn folds) ────────────────
+
+function isProcessBlock(block: AssistantMessage["content"][number]): boolean {
+  return block.type === "thinking" || block.type === "redactedThinking" || block.type === "toolCall";
+}
+
+function AssistantBlock({
+  block,
+  streaming,
+  resultsByCallId,
+}: {
+  block: AssistantMessage["content"][number];
+  streaming: boolean;
+  resultsByCallId: Map<string, ToolResultMessage>;
+}) {
+  const { t } = useI18n();
+  switch (block.type) {
+    case "text":
+      return <Markdown text={(block as TextContent).text} />;
+    case "thinking":
+      return <ThinkingBlock text={(block as ThinkingContent).thinking} streaming={streaming} />;
+    case "redactedThinking":
+      return <ThinkingBlock text={t("message.reasoningWithheld")} streaming={false} />;
+    case "toolCall": {
+      const call = block as ToolCall;
+      return <ConnectedToolCard call={call} resultsByCallId={resultsByCallId} />;
+    }
+    case "image": {
+      const image = block as ImageContent;
+      return (
+        <img
+          src={`data:${image.mimeType};base64,${image.data}`}
+          alt="attachment"
+          loading="lazy"
+          decoding="async"
+          className="max-h-72 rounded-xl border border-zinc-200 dark:border-zinc-800"
+        />
+      );
+    }
+    default:
+      return null;
+  }
+}
+
 // ── Message rows ────────────────────────────────────────────────────────────
 
 export interface ChatEntryUser {
@@ -250,43 +303,7 @@ export function UserRow({ entry }: { entry: ChatEntryUser }) {
   );
 }
 
-function ConnectedToolCard({
-  call,
-  resultsByCallId,
-}: {
-  call: ToolCall;
-  resultsByCallId: Map<string, ToolResultMessage>;
-}) {
-  const liveRun = useAppStore((s) => s.toolRuns.find((run) => run.toolCallId === call.id));
-  const committedResult = resultsByCallId.get(call.id);
-  const view: ToolView = liveRun
-    ? {
-        name: liveRun.toolName,
-        args: liveRun.args ?? call.arguments,
-        status: liveRun.status,
-        outputText: liveRun.outputText,
-      }
-    : {
-        name: call.name,
-        args: call.arguments,
-        status: committedResult ? (committedResult.isError ? "error" : "done") : "running",
-        outputText:
-          committedResult?.content
-            .filter((b): b is TextContent => b.type === "text")
-            .map((b) => b.text)
-            .join("\n") ?? "",
-      };
-  return <ToolCard tool={view} />;
-}
-
-function isThinkingBlock(block: AssistantMessage["content"][number]): block is ThinkingContent {
-  return block.type === "thinking";
-}
-
-function isProcessBlock(block: AssistantMessage["content"][number]): boolean {
-  return block.type === "thinking" || block.type === "redactedThinking" || block.type === "toolCall";
-}
-
+/** Live assistant turn; renders every block as it streams in. */
 export function MessageView({
   message,
   resultsByCallId,
@@ -299,58 +316,11 @@ export function MessageView({
   /** Render the agent avatar only at the start of a turn. */
   showAvatar?: boolean;
 }) {
-  const { t } = useI18n();
   const blocks = message.content;
   let lastThinkingIndex = -1;
   blocks.forEach((block, index) => {
-    if (isThinkingBlock(block)) lastThinkingIndex = index;
+    if (block.type === "thinking") lastThinkingIndex = index;
   });
-
-  const renderBlock = (block: AssistantMessage["content"][number], index: number) => {
-    switch (block.type) {
-      case "text":
-        return (
-          <div
-            key={index}
-            className={isStreamingTurn && index === blocks.length - 1 ? "stream-caret" : undefined}
-          >
-            <Markdown text={(block as TextContent).text} />
-          </div>
-        );
-      case "thinking":
-        return (
-          <ThinkingBlock
-            key={index}
-            text={(block as ThinkingContent).thinking}
-            streaming={isStreamingTurn && index === lastThinkingIndex}
-          />
-        );
-      case "redactedThinking":
-        return <ThinkingBlock key={index} text={t("message.reasoningWithheld")} streaming={false} />;
-      case "toolCall": {
-        const call = block as ToolCall;
-        return <ConnectedToolCard key={call.id || index} call={call} resultsByCallId={resultsByCallId} />;
-      }
-      case "image": {
-        const image = block as ImageContent;
-        return (
-          <img
-            key={index}
-            src={`data:${image.mimeType};base64,${image.data}`}
-            alt="attachment"
-            className="max-h-72 rounded-xl border border-zinc-200 dark:border-zinc-800"
-          />
-        );
-      }
-      default:
-        return null;
-    }
-  };
-
-  // Completed turns fold their reasoning/tool process into one summary row;
-  // text/image blocks stay visible below it.
-  const processCount = blocks.filter(isProcessBlock).length;
-  const collapseProcess = !isStreamingTurn && processCount > 0;
 
   return (
     <div className={`flex gap-3 ${showAvatar ? "" : "pl-10"}`}>
@@ -360,23 +330,120 @@ export function MessageView({
         </div>
       )}
       <div className="min-w-0 flex-1 space-y-2">
-        {collapseProcess ? (
-          <>
-            <TurnSummary message={message} processCount={processCount}>
-              {blocks.map((block, index) => (isProcessBlock(block) ? renderBlock(block, index) : null))}
-            </TurnSummary>
-            {blocks.map((block, index) => (!isProcessBlock(block) ? renderBlock(block, index) : null))}
-          </>
-        ) : (
-          blocks.map((block, index) => renderBlock(block, index))
-        )}
+        {blocks.map((block, index) => (
+          <div key={index} className={isStreamingTurn && index === blocks.length - 1 ? "stream-caret" : undefined}>
+            <AssistantBlock
+              block={block}
+              streaming={isStreamingTurn && index === lastThinkingIndex}
+              resultsByCallId={resultsByCallId}
+            />
+          </div>
+        ))}
         {message.errorMessage && (
           <p className="rounded-lg border border-red-300/60 bg-red-50 px-3 py-2 text-[12.5px] text-red-600 dark:border-red-500/40 dark:bg-red-950/30 dark:text-red-300">
             {message.errorMessage}
           </p>
         )}
-        {!isStreamingTurn && <UsageChips message={message} />}
       </div>
     </div>
+  );
+}
+
+// ── Turn summary (completed turns) ──────────────────────────────────────────
+
+function fmtDuration(ms: number): string {
+  const s = ms / 1000;
+  if (s < 60) return `${s < 10 ? s.toFixed(1) : Math.round(s)}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${Math.round(s % 60)}s`;
+}
+
+/**
+ * One fold per finished turn: the entire execution flow (thinking, tool
+ * calls, intermediate texts) collapses into a single summary row — only the
+ * final conclusion stays visible below it.
+ */
+export function TurnRow({
+  user,
+  assistants,
+  resultsByCallId,
+}: {
+  user: ChatEntry | null;
+  assistants: AssistantMessage[];
+  resultsByCallId: Map<string, ToolResultMessage>;
+}) {
+  const { t } = useI18n();
+
+  // Conclusion = text/image blocks of the last assistant message that has
+  // any; everything else (including that message's thinking/tools) folds.
+  let conclusionIndex = -1;
+  for (let i = assistants.length - 1; i >= 0; i -= 1) {
+    if (assistants[i].content.some((b) => b.type === "text" || b.type === "image")) {
+      conclusionIndex = i;
+      break;
+    }
+  }
+  const conclusion = conclusionIndex >= 0 ? assistants[conclusionIndex] : null;
+
+  const processBlocks: AssistantMessage["content"] = [];
+  let totalDuration = 0;
+  let stepCount = 0;
+  assistants.forEach((message, index) => {
+    if (message.duration != null) totalDuration += message.duration;
+    message.content.forEach((block) => {
+      if (index === conclusionIndex && !isProcessBlock(block)) return;
+      processBlocks.push(block);
+      if (isProcessBlock(block)) stepCount += 1;
+    });
+  });
+  const lastError = assistants.filter((m) => m.errorMessage).at(-1) ?? null;
+
+  return (
+    <>
+      {user && user.role === "user" && <UserRow entry={user as ChatEntryUser} />}
+      {assistants.length > 0 && (
+        <div className="flex gap-3">
+          <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground shadow-sm">
+            <IconBot size={15} />
+          </div>
+          <div className="min-w-0 flex-1 space-y-2">
+            {processBlocks.length > 0 && (
+              <Collapsible
+                tone="dim"
+                title={
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="text-[12px] leading-none">⚡</span>
+                    <span className="text-zinc-500 dark:text-zinc-400">
+                      {t("message.turnSummary", { steps: stepCount })}
+                    </span>
+                    {totalDuration > 0 && (
+                      <span className="shrink-0 text-[11.5px] tabular-nums text-zinc-400">
+                        {fmtDuration(totalDuration)}
+                      </span>
+                    )}
+                  </span>
+                }
+              >
+                <div className="space-y-2">
+                  {processBlocks.map((block, index) => (
+                    <AssistantBlock key={index} block={block} streaming={false} resultsByCallId={resultsByCallId} />
+                  ))}
+                </div>
+              </Collapsible>
+            )}
+            {conclusion &&
+              conclusion.content
+                .filter((block) => !isProcessBlock(block))
+                .map((block, index) => <AssistantBlock key={index} block={block} streaming={false} resultsByCallId={resultsByCallId} />)}
+            {conclusion && <UsageChips message={conclusion} />}
+            {lastError && (
+              <p className="rounded-lg border border-red-300/60 bg-red-50 px-3 py-2 text-[12.5px] text-red-600 dark:border-red-500/40 dark:bg-red-950/30 dark:text-red-300">
+                {lastError.errorMessage}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

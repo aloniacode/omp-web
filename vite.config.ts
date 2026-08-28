@@ -150,6 +150,9 @@ export default defineConfig({
   server: {
     host: "127.0.0.1",
     port: 9527,
+    // Sandboxed dev runs redirect the agent home into the workspace; its
+    // sqlite wal churn would otherwise trigger endless full page reloads.
+    watch: { ignored: ["**/.tmp-home/**"] },
     proxy: {
       "/api": { target: BRIDGE_HOST, changeOrigin: true },
     },
