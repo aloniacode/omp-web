@@ -138,6 +138,9 @@ export const messages = {
     "settings.accent.rose": "Rose",
     "settings.accent.amber": "Amber",
 
+    "settings.about": "About",
+    "settings.version": "Version",
+
     "settings.omp.model": "Model",
     "settings.omp.thinking": "Thinking level",
     "settings.omp.steering": "Steering",
@@ -276,6 +279,9 @@ export const messages = {
     "settings.accent.emerald": "翠绿",
     "settings.accent.rose": "玫红",
     "settings.accent.amber": "琥珀",
+
+    "settings.about": "关于",
+    "settings.version": "版本",
 
     "settings.omp.model": "模型",
     "settings.omp.thinking": "思考等级",

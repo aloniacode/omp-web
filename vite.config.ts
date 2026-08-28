@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import { defineConfig, type Plugin, type ViteDevServer } from "vite";
@@ -7,6 +8,10 @@ import tailwindcss from "@tailwindcss/vite";
 
 const BRIDGE = process.env.BRIDGE_PORT ?? "8787";
 const BRIDGE_HOST = `http://127.0.0.1:${BRIDGE}`;
+
+const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("./package.json", import.meta.url)), "utf8")) as {
+  version: string;
+};
 
 /**
  * Runs the RPC bridge as a child of the vite dev server so both share one
@@ -117,6 +122,10 @@ function ompBridge(): Plugin {
 }
 
 export default defineConfig({
+  // Compile-time app version (package.json) for the sidebar badge and settings.
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   plugins: [
     react({
       // React Compiler: auto-memoizes components and JSX (React 19 runtime).

@@ -217,6 +217,12 @@ function WebSettings() {
           </div>
         </Row>
       </Section>
+
+      <Section title={t("settings.about")}>
+        <Row label={t("settings.version")}>
+          <span className="font-mono text-[12px] text-zinc-500 dark:text-zinc-400">v{__APP_VERSION__}</span>
+        </Row>
+      </Section>
     </>
   );
 }

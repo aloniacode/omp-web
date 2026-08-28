@@ -307,7 +307,14 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           <div className="flex size-7 items-center justify-center rounded-lg bg-accent text-[13px] font-bold text-accent-foreground shadow-sm">
             π
           </div>
-          <span className="flex-1 text-[15px] font-semibold tracking-tight">{t("app.title")}</span>
+          <div className="min-w-0 flex-1">
+            <span className="block truncate text-[15px] font-semibold leading-none tracking-tight">
+              {t("app.title")}
+            </span>
+            <span className="mt-0.5 block font-mono text-[10.5px] leading-none text-zinc-400 dark:text-zinc-500">
+              v{__APP_VERSION__}
+            </span>
+          </div>
           <button
             type="button"
             onClick={onClose}
