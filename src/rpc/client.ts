@@ -1,4 +1,5 @@
 import type { RpcCommand, RpcFrame, RpcResponseFrame } from "./types";
+import { coalesceKey } from "../lib/idempotency";
 
 export type ConnStatus = "connecting" | "connected" | "reconnecting" | "closed";
 
@@ -33,6 +34,8 @@ export class OmpRpcClient {
   #ws: WebSocket | null = null;
   #nextId = 1;
   #pending = new Map<string, PendingRequest>();
+  /** In-flight idempotent commands by coalesce key: duplicates share one request. */
+  #inflight = new Map<string, Promise<RpcResponseFrame>>();
   #frameSinks = new Set<FrameSink>();
   #statusSinks = new Set<StatusSink>();
   #attempt = 0;
@@ -74,10 +77,39 @@ export class OmpRpcClient {
     else this.#open();
   }
 
-  /** Send an RPC command and correlate its response by generated id. */
+  /**
+   * Send an RPC command and correlate its response by generated id.
+   * Idempotent commands with identical arguments are coalesced while in
+   * flight: concurrent duplicates (double clicks, re-picks) share one
+   * request instead of doubling agent work. Sharers inherit the first
+   * caller's timeout — per-call timeout overrides do not apply to duplicates.
+   */
   request<TData = unknown>(
     command: RpcCommand,
     timeoutMs = 300_000,
+  ): Promise<RpcResponseFrame<TData>> {
+    const key = coalesceKey(command);
+    if (key) {
+      const existing = this.#inflight.get(key) as Promise<RpcResponseFrame<TData>> | undefined;
+      if (existing) return existing;
+    }
+    const promise = this.#doRequest<TData>(command, timeoutMs);
+    if (key) {
+      this.#inflight.set(key, promise as Promise<RpcResponseFrame>);
+      // Cleanup registers on the request promise itself so it runs before any
+      // caller continuation: a follow-up request right after a settle must
+      // send, not silently coalesce with the just-settled entry.
+      const cleanup = () => {
+        if (this.#inflight.get(key) === promise) this.#inflight.delete(key);
+      };
+      void promise.then(cleanup, cleanup).catch(() => undefined);
+    }
+    return promise;
+  }
+
+  #doRequest<TData = unknown>(
+    command: RpcCommand,
+    timeoutMs: number,
   ): Promise<RpcResponseFrame<TData>> {
     const id = `web-${this.#nextId++}`;
     const frame = { ...command, id };

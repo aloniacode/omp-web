@@ -7,6 +7,7 @@ import { stripGoalContract } from "../lib/goalMode";
 import { assistantText } from "../lib/format";
 import { notifyTurnEnd } from "../lib/notify";
 import type { BridgeHealth } from "@omp-web/protocol";
+import { isDuplicatePendingMessage } from "../lib/idempotency";
 import type {
   AgentEndFrame,
   ImageContent,
@@ -195,6 +196,8 @@ function unwrapUiContract(entry: AgentMessage): AgentMessage {
 
 let noticeSeq = 1;
 let loadEpoch = 0;
+/** One compaction at a time: a second click shares the in-flight request. */
+let compactBusy = false;
 
 /**
  * Structural sharing between consecutive streaming frames. Frames re-send the
@@ -554,6 +557,12 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       const trimmed = text.trim();
       if (!trimmed && (!images || images.length === 0)) return;
       const state = get();
+      // Fast double-Enter / double-click: an identical prompt still pending
+      // is a duplicate, not a queued follow-up.
+      if (isDuplicatePendingMessage(state.messages, trimmed, images?.length ?? 0)) {
+        addNotice("info", storeT("notice.duplicatePrompt"));
+        return;
+      }
       const streaming = state.agentState?.isStreaming || state.streamingMsg !== null;
       const hasImages = Boolean(images && images.length > 0);
       set((current) => ({
@@ -624,12 +633,16 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     },
 
     compact(customInstructions?: string) {
+      if (compactBusy) return;
+      compactBusy = true;
       client.request({ type: "compact", customInstructions }).then((resp) => {
         if (!resp.success) throw new Error(resp.error ?? "compact failed");
         addNotice("info", storeT("notice.compacted"));
         void client.request({ type: "get_state" });
         void client.request({ type: "get_session_stats" });
-      }).catch((err: unknown) => fail(err, "compact"));
+      }).catch((err: unknown) => fail(err, "compact")).finally(() => {
+        compactBusy = false;
+      });
     },
 
     setPlanMode(enabled: boolean) {
