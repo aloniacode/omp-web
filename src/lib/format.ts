@@ -74,7 +74,7 @@ export function assistantText(content: AssistantMessage["content"] | undefined |
 
 export function toolArgsSummary(args: Record<string, unknown> | undefined, max = 80): string {
   if (!args) return "";
-  const preferred = ["command", "path", "file", "file_path", "pattern", "query", "url", "name", "intent"];
+  const preferred = ["command", "path", "file", "file_path", "pattern", "query", "url", "name", "intent", "objective"];
   for (const key of preferred) {
     const value = args[key];
     if (typeof value === "string" && value.trim()) {

@@ -162,6 +162,37 @@ export interface TodoPhase {
   tasks: TodoTask[];
 }
 
+// ── Goal mode ───────────────────────────────────────────────────────────────
+// Mirrors oh-my-pi's goals/state.ts (Goal / GoalModeState) and the
+// `goal_updated` session event forwarded over RPC.
+
+export type GoalStatus = "active" | "paused" | "budget-limited" | "complete" | "dropped";
+
+export interface Goal {
+  id: string;
+  objective: string;
+  status: GoalStatus;
+  tokenBudget?: number;
+  tokensUsed: number;
+  timeUsedSeconds: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface GoalModeState {
+  enabled: boolean;
+  mode: "active" | "exiting";
+  reason?: "completed";
+  goal: Goal;
+}
+
+export interface GoalUpdatedFrame {
+  type: "goal_updated";
+  /** Tolerant: treated as null when absent. */
+  goal?: Goal | null;
+  state?: GoalModeState;
+}
+
 export interface RpcSessionState {
   model?: ModelInfo;
   thinkingLevel?: ThinkingLevel;

@@ -18,6 +18,8 @@ import {
   subscribeComposerText,
 } from "../state/composerText";
 import type { ImageContent } from "../rpc/types";
+import type { Goal } from "../rpc/types";
+import { buildGoalKickoff, buildGoalOpPrompt, GOAL_STATUS_KEYS, type GoalOp } from "../lib/goalMode";
 import { ModelPicker, ProjectPicker } from "./pickers";
 import { ContextDisplay } from "./ContextDisplay";
 import { Button } from "./ui/button";
@@ -43,6 +45,11 @@ interface Attachment {
 
 const TRIGGER_FILE = /@([\w\-./]*)$/;
 const TRIGGER_SKILL = /(^|\s)\/([a-z0-9-]*)$/i;
+
+/** Goal lifecycle states the /goal subcommands operate on. */
+function isGoalOperable(goal: Goal | null): goal is Goal {
+  return goal !== null && (goal.status === "active" || goal.status === "paused" || goal.status === "budget-limited");
+}
 
 /** Read a picked file as a base64 image attachment. */
 function readImage(file: File): Promise<Attachment> {
@@ -207,10 +214,11 @@ export function Composer() {
    * still reaches the agent as a normal message.
    */
   const runSlashCommand = (text: string): boolean => {
-    const match = text.match(/^\/(compact|new|export|stop|name|plan)(?:\s+([\s\S]*))?$/);
+    const match = text.match(/^\/(compact|new|export|stop|name|plan|goal)(?:\s+([\s\S]*))?$/);
     if (!match) return false;
     const [, cmd, rest = ""] = match;
     const arg = rest.trim();
+    const current = useAppStore.getState();
     switch (cmd) {
       case "compact":
         actions.compact(arg || undefined);
@@ -232,13 +240,63 @@ export function Composer() {
         return false;
       case "plan":
         // `/plan <prompt>` enters plan mode and submits; bare `/plan` toggles.
+        // Upstream: plan mode is blocked while a goal is active.
+        if (isGoalOperable(current.goal)) {
+          actions.notify("warning", t("goal.blockedByGoal"));
+          return true;
+        }
         if (arg) {
           actions.setPlanMode(true);
           actions.sendPrompt(arg);
           return true;
         }
-        actions.setPlanMode(!useAppStore.getState().planMode);
+        actions.setPlanMode(!current.planMode);
         return true;
+      case "goal": {
+        // Mirror upstream `/goal` subcommands that map onto goal-tool ops.
+        // Ops must be the exact word: `/goal <anything else>` is an objective.
+        const goal = current.goal;
+        const sub = arg ? arg.split(/\s+/)[0] : "";
+        const op: GoalOp | null =
+          arg && (sub === "drop" || sub === "resume" || sub === "complete") && arg === sub ? sub : null;
+        if (op) {
+          if (!isGoalOperable(goal)) {
+            actions.notify("warning", t("goal.none"));
+            return true;
+          }
+          if (op === "resume" && goal.status !== "paused") {
+            actions.notify("warning", t("goal.notPaused"));
+            return true;
+          }
+          if (op === "complete" && goal.status === "paused") {
+            actions.notify("warning", t("goal.resumeFirst"));
+            return true;
+          }
+          actions.sendPrompt(buildGoalOpPrompt(op));
+          return true;
+        }
+        if (arg) {
+          // Upstream: goal mode is blocked by plan mode.
+          if (current.planMode) {
+            actions.notify("warning", t("goal.blockedByPlan"));
+            return true;
+          }
+          if (isGoalOperable(goal)) {
+            actions.notify("warning", t("goal.alreadyActive"));
+            return true;
+          }
+          actions.sendPrompt(buildGoalKickoff(arg));
+          return true;
+        }
+        actions.notify(
+          "info",
+          goal && isGoalOperable(goal)
+            ? `${goal.objective} · ${t(GOAL_STATUS_KEYS[goal.status])}`
+            : t("goal.usage"),
+          "goal",
+        );
+        return true;
+      }
       default:
         return false;
     }
@@ -456,7 +514,14 @@ export function Composer() {
             <button
               type="button"
               disabled={!connected}
-              onClick={() => actions.setPlanMode(!planMode)}
+              onClick={() => {
+                // Upstream: plan mode is blocked while a goal is active.
+                if (!planMode && isGoalOperable(useAppStore.getState().goal)) {
+                  actions.notify("warning", t("goal.blockedByGoal"));
+                  return;
+                }
+                actions.setPlanMode(!planMode);
+              }}
               aria-pressed={planMode}
               aria-label={t("plan.toggle")}
               title={t("plan.toggle")}

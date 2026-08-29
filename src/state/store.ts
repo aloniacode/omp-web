@@ -3,12 +3,15 @@ import { OmpRpcClient, type ConnStatus } from "../rpc/client";
 import { setComposerText } from "./composerText";
 import { storeT } from "../i18n";
 import { buildExecutePrompt, stripPlanContract, wrapPlanPrompt } from "../lib/planMode";
+import { stripGoalContract } from "../lib/goalMode";
 import type {
   AgentEndFrame,
   ImageContent,
   AgentMessage,
   AssistantMessage,
   ExtensionUiRequest,
+  Goal,
+  GoalUpdatedFrame,
   ModelInfo,
   NoticeFrame,
   ProjectInfo,
@@ -86,6 +89,8 @@ export interface AppState {
   planMode: boolean;
   /** Message index where plan mode was enabled; the review bar only considers later turns. */
   planModeFromIndex: number | null;
+  /** Active session goal (goal mode), pushed by `goal_updated` events. */
+  goal: Goal | null;
 }
 
 export interface StoreActions {
@@ -147,6 +152,7 @@ const initialState: AppState = {
   awaitingAgent: false,
   planMode: false,
   planModeFromIndex: null,
+  goal: null,
 };
 
 export function isOptimistic(entry: ChatEntry): entry is OptimisticUserMessage {
@@ -165,12 +171,13 @@ function textOfToolResult(result: ToolResultLike | undefined): string {
 
 /**
  * The agent transcript stores what went over the wire; plan-mode prompts were
- * wrapped with the planning contract. Strip it back off so committed history
- * and reloaded sessions show the user's original wording.
+ * wrapped with the planning contract and goal prompts with the goal contract.
+ * Strip those back off so committed history and reloaded sessions show the
+ * user's original wording.
  */
-function unwrapPlanPrompt(entry: AgentMessage): AgentMessage {
+function unwrapUiContract(entry: AgentMessage): AgentMessage {
   if (entry.role === "user" && typeof entry.content === "string") {
-    const stripped = stripPlanContract(entry.content);
+    const stripped = stripGoalContract(stripPlanContract(entry.content));
     if (stripped !== entry.content) return { ...entry, content: stripped };
   }
   return entry;
@@ -257,7 +264,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
           limit: 256,
         });
         if (!resp.success || !resp.data) throw new Error(resp.error ?? "paged messages unavailable");
-        acc.push(...(resp.data.messages ?? []).map(unwrapPlanPrompt));
+        acc.push(...(resp.data.messages ?? []).map(unwrapUiContract));
         if (!resp.data.nextCursor) return acc;
         cursor = resp.data.nextCursor;
       }
@@ -265,7 +272,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     } catch {
       // Legacy/v1 fallback or transient busy: best-effort monolithic snapshot.
       const resp = await client.request<{ messages: AgentMessage[] }>({ type: "get_messages" });
-      if (resp.success && Array.isArray(resp.data?.messages)) return resp.data.messages.map(unwrapPlanPrompt);
+      if (resp.success && Array.isArray(resp.data?.messages)) return resp.data.messages.map(unwrapUiContract);
       return acc;
     }
   };
@@ -309,7 +316,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       case "agent_end": {
         const end = frame as AgentEndFrame;
         if (end.isTerminal === false) break; // maintenance pause, more work scheduled
-        const committed = Array.isArray(end.messages) ? end.messages.map(unwrapPlanPrompt) : null;
+        const committed = Array.isArray(end.messages) ? end.messages.map(unwrapUiContract) : null;
         set(() => ({
           ...(committed ? { messages: committed } : null),
           streamingMsg: null,
@@ -369,6 +376,14 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       case "thinking_level_changed":
         void client.request({ type: "get_state" });
         break;
+
+      case "goal_updated": {
+        // Note: upstream does not replay goal state when a host attaches to an
+        // existing session, so `goal` only reflects goals observed live.
+        const update = frame as GoalUpdatedFrame;
+        set({ goal: update.goal ?? null });
+        break;
+      }
 
       case "notice": {
         const notice = frame as NoticeFrame;
@@ -482,6 +497,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
             awaitingAgent: false,
             planMode: false,
             planModeFromIndex: null,
+            goal: null,
           });
           void initSession();
         }
