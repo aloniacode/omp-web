@@ -23,6 +23,7 @@ import { WebSocketServer } from "ws";
 import { parseSessionPrefix, bucketNamesForCwd } from "./session-meta.mjs";
 import { FrameAssembler } from "./rpc-frame.mjs";
 import { listBranches, checkoutBranch } from "./git-branches.mjs";
+import { writeScratchFile } from "./scratch.mjs";
 import { NEGOTIATED_MAX_REASSEMBLED_BYTES, PROTOCOL_REQUEST_ID, PROTOCOL_VERSION, hasType } from "@omp-web/protocol";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -34,6 +35,10 @@ const OMP_BIN = process.env.OMP_BIN ?? "omp";
 let ompCwd = process.env.OMP_CWD ?? process.cwd();
 const DIST_DIR = path.join(__dirname, "..", "dist");
 const MAX_LINE_BYTES = 128 * 1024 * 1024;
+/** Uplink guard: browser -> agent stdin frames above this are rejected.
+ *  Generous default: image-bearing prompt frames are base64-heavy. */
+const UPLINK_MB = Number(process.env.OMP_MAX_UPLINK_MB ?? 32);
+const MAX_UPLINK_BYTES = (Number.isFinite(UPLINK_MB) && UPLINK_MB > 0 ? UPLINK_MB : 32) * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // Session listing (~/.omp/agent/sessions/<encoded-cwd>/<ts>_<id>.jsonl)
@@ -404,6 +409,18 @@ const server = http.createServer(async (req, res) => {
       if (!name) return sendJson(res, 400, { error: "missing branch name" });
       return sendJson(res, 200, await checkoutBranch(ompCwd, name, body.create === true));
     }
+    if (url.pathname === "/api/scratch" && req.method === "POST") {
+      // Reject oversized uploads before buffering them.
+      const declared = Number(req.headers["content-length"] ?? 0);
+      if (Number.isFinite(declared) && declared > MAX_UPLINK_BYTES + 1024) {
+        return sendJson(res, 413, { error: "scratch content exceeds the uplink cap" });
+      }
+      const body = await readJsonBody(req);
+      if (Buffer.byteLength(String(body.text ?? ""), "utf8") > MAX_UPLINK_BYTES) {
+        return sendJson(res, 413, { error: "scratch content exceeds the uplink cap" });
+      }
+      return sendJson(res, 200, await writeScratchFile(ompCwd, body.text));
+    }
     if (url.pathname === "/api/sessions" && req.method === "GET") {
       const limit = Math.min(Number(url.searchParams.get("limit") ?? 60) || 60, 200);
       const scope = url.searchParams.get("scope") === "bucket" ? "bucket" : "all";
@@ -544,6 +561,18 @@ wss.on("connection", (ws) => {
   if (child.pid) children.add(child);
 
   ws.on("message", (raw) => {
+    if (raw.length > MAX_UPLINK_BYTES) {
+      // The RPC stdin pipe has no chunking on the uplink: reject absurd
+      // payloads instead of letting them stall the agent child.
+      ws.send(
+        JSON.stringify({
+          type: "bridge_event",
+          event: "frame_error",
+          error: `uplink frame exceeds ${Math.floor(MAX_UPLINK_BYTES / 1024 / 1024)} MiB cap`,
+        }),
+      );
+      return;
+    }
     let obj;
     try {
       obj = JSON.parse(raw.toString("utf8"));

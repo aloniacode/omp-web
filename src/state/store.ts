@@ -8,6 +8,13 @@ import { assistantText } from "../lib/format";
 import { notifyTurnEnd } from "../lib/notify";
 import type { BridgeHealth } from "@omp-web/protocol";
 import { isDuplicatePendingMessage } from "../lib/idempotency";
+import {
+  buildOversizeBubble,
+  buildOversizePrompt,
+  isOversizePrompt,
+  stripOversizeContract,
+  truncateToolOutput,
+} from "../lib/oversize";
 import type {
   AgentEndFrame,
   ImageContent,
@@ -188,7 +195,7 @@ function textOfToolResult(result: ToolResultLike | undefined): string {
  */
 function unwrapUiContract(entry: AgentMessage): AgentMessage {
   if (entry.role === "user" && typeof entry.content === "string") {
-    const stripped = stripGoalContract(stripPlanContract(entry.content));
+    const stripped = stripOversizeContract(stripGoalContract(stripPlanContract(entry.content)));
     if (stripped !== entry.content) return { ...entry, content: stripped };
   }
   return entry;
@@ -198,6 +205,8 @@ let noticeSeq = 1;
 let loadEpoch = 0;
 /** One compaction at a time: a second click shares the in-flight request. */
 let compactBusy = false;
+/** One oversized-prompt offload at a time: covers accidental double submits. */
+let oversizeBusy = false;
 
 /**
  * Structural sharing between consecutive streaming frames. Frames re-send the
@@ -376,7 +385,9 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       case "tool_execution_end": {
         const tool = frame as ToolExecutionFrame;
         const payload = tool.result ?? tool.partialResult;
-        const text = textOfToolResult(payload);
+        // Live tool runs hold their output in memory for the whole turn; cap
+        // pathological outputs (the agent transcript keeps the full text).
+        const text = truncateToolOutput(textOfToolResult(payload));
         const done = frame.type === "tool_execution_end";
         const run: ToolRun = {
           toolCallId: tool.toolCallId,
@@ -552,6 +563,45 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
+  /**
+   * Optimistic bubble + wire prompt dispatch. `bubble` is what the transcript
+   * shows; `wire` is what goes to the agent (identical except for oversized
+   * prompts, which reference a scratch file). Resolves when the prompt RPC
+   * settles (accepted or rejected — turn lifecycle takes over after that).
+   */
+  const dispatchPrompt = (bubble: string, wire: string, images?: ImageContent[]) => {
+    const streaming = get().agentState?.isStreaming || get().streamingMsg !== null;
+    const hasImages = Boolean(images && images.length > 0);
+    set((current) => ({
+      messages: [
+        ...current.messages,
+        {
+          role: "user",
+          content: hasImages ? [{ type: "text", text: bubble }, ...(images ?? [])] : bubble,
+          timestamp: Date.now(),
+          pending: true,
+        },
+      ],
+      awaitingAgent: true,
+    }));
+    const command = streaming
+      ? ({ type: "prompt", message: wire, images, streamingBehavior: "followUp" } as const)
+      : ({ type: "prompt", message: wire, images } as const);
+    return client
+      .request<{ agentInvoked?: boolean }>(command)
+      .then((resp) => {
+        if (!resp.success) throw new Error(resp.error ?? "prompt rejected");
+        if (resp.data?.agentInvoked === true) return; // turn lifecycle takes over
+        patchPending(false);
+        set({ awaitingAgent: false });
+        void client.request({ type: "get_state" });
+      })
+      .catch((err: unknown) => {
+        patchPending(true);
+        fail(err, "prompt");
+      });
+  };
+
   const actions: StoreActions = {
     sendPrompt(text: string, images?: ImageContent[]) {
       const trimmed = text.trim();
@@ -563,39 +613,47 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
         addNotice("info", storeT("notice.duplicatePrompt"));
         return;
       }
-      const streaming = state.agentState?.isStreaming || state.streamingMsg !== null;
-      const hasImages = Boolean(images && images.length > 0);
-      set((current) => ({
-        messages: [
-          ...current.messages,
-          {
-            role: "user",
-            content: hasImages && trimmed ? [{ type: "text", text: trimmed }, ...(images ?? [])] : trimmed,
-            timestamp: Date.now(),
-            pending: true,
-          },
-        ],
-        awaitingAgent: true,
-      }));
       // Plan mode wraps what goes on the wire; the visible bubble keeps the
       // user's original wording.
-      const wire = state.planMode ? wrapPlanPrompt(trimmed) : trimmed;
-      const command = streaming
-        ? ({ type: "prompt", message: wire, images, streamingBehavior: "followUp" } as const)
-        : ({ type: "prompt", message: wire, images } as const);
-      client
-        .request<{ agentInvoked?: boolean }>(command)
-        .then((resp) => {
-          if (!resp.success) throw new Error(resp.error ?? "prompt rejected");
-          if (resp.data?.agentInvoked === true) return; // turn lifecycle takes over
-          patchPending(false);
-          set({ awaitingAgent: false });
-          void client.request({ type: "get_state" });
+      const wrapWire = (wire: string) => (state.planMode ? wrapPlanPrompt(wire) : wire);
+      // Oversized prompts are offloaded to a scratch file and sent as a file
+      // reference + preview; on transport failure fall back to inline. The
+      // busy window lasts until the prompt RPC settles — the duplicate guard
+      // above cannot match the compact bubble, so this closes the gap.
+      if (isOversizePrompt(trimmed)) {
+        if (oversizeBusy) {
+          addNotice("info", storeT("notice.duplicatePrompt"));
+          return;
+        }
+        oversizeBusy = true;
+        const release = (promise: Promise<void>) => {
+          void promise.then(
+            () => {
+              oversizeBusy = false;
+            },
+            () => {
+              oversizeBusy = false;
+            },
+          );
+        };
+        fetch("/api/scratch", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: trimmed }),
+          signal: AbortSignal.timeout(10_000),
         })
-        .catch((err: unknown) => {
-          patchPending(true);
-          fail(err, "prompt");
-        });
+          .then(async (res) => {
+            const body = (await res.json()) as { path?: string; file?: string; error?: string };
+            if (!res.ok || !body.path || !body.file) throw new Error(body.error ?? "scratch write failed");
+            release(dispatchPrompt(buildOversizeBubble(trimmed, body.file), wrapWire(buildOversizePrompt(trimmed, body.path)), images));
+          })
+          .catch(() => {
+            addNotice("warning", storeT("notice.oversizeFallback"));
+            release(dispatchPrompt(trimmed, wrapWire(trimmed), images));
+          });
+        return;
+      }
+      dispatchPrompt(trimmed, wrapWire(trimmed), images);
     },
 
     stop() {

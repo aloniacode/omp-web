@@ -78,7 +78,9 @@ pnpm start        # http://127.0.0.1:8787
 ```
 
 要求 `omp` 在 `PATH` 中(可用 `OMP_BIN` 覆盖,另有 `OMP_CWD`、`OMP_ARGS`、`PORT`、`HOST`)。
-分支选择器还要求 bridge 的 PATH 中有 `git`。bridge 绑定 `127.0.0.1` 且**无鉴权** ——
+分支选择器还要求 bridge 的 PATH 中有 `git`。超长 prompt 会写入 `<project>/.omp/scratch/`
+并以文件引用发送 —— 若该项目本身是 git 仓库,建议把该目录加入 `.gitignore`。
+bridge 绑定 `127.0.0.1` 且**无鉴权** ——
 它能驱动你的智能体并在 agent 目录中执行 git,请仅在本地使用。
 
 ```sh

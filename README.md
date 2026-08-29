@@ -87,9 +87,10 @@ pnpm start        # http://127.0.0.1:8787
 ```
 
 Requires `omp` on `PATH` (override with `OMP_BIN`, plus `OMP_CWD`, `OMP_ARGS`, `PORT`, `HOST`).
-The branch picker additionally needs `git` on the bridge's PATH. The bridge binds
-`127.0.0.1` and has **no auth** — it can drive your agent and run git in the agent
-directory; keep it local.
+The branch picker additionally needs `git` on the bridge's PATH. Oversized prompts are
+written to `<project>/.omp/scratch/` and referenced as files — add that directory to the
+project's `.gitignore` if you commit the repo. The bridge binds `127.0.0.1` and has
+**no auth** — it can drive your agent and run git in the agent directory; keep it local.
 
 ```sh
 pnpm vitest run                            # unit tests (pure helpers + server modules)
