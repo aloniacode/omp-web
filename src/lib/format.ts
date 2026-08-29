@@ -1,4 +1,5 @@
 /** Number/time formatting helpers for token and cost display. */
+import type { AssistantMessage } from "../rpc/types";
 
 export function fmtTokens(n: number | undefined | null): string {
   if (n == null || !Number.isFinite(n)) return "0";
@@ -56,6 +57,15 @@ export function truncate(text: string, max: number): string {
 export function userText(content: string | Array<{ type: string; text?: string }> | undefined | null): string {
   if (!content) return "";
   if (typeof content === "string") return content;
+  return content
+    .filter((b): b is { type: "text"; text: string } => b.type === "text")
+    .map((b) => b.text)
+    .join("\n");
+}
+
+/** Concatenated text blocks of an assistant message (tool calls/thinking skipped). */
+export function assistantText(content: AssistantMessage["content"] | undefined | null): string {
+  if (!Array.isArray(content)) return "";
   return content
     .filter((b): b is { type: "text"; text: string } => b.type === "text")
     .map((b) => b.text)

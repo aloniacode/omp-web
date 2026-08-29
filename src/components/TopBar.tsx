@@ -75,6 +75,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const sessions = useAppStore((s) => s.sessions);
   const activePath = useAppStore((s) => s.activePath);
   const hasStreamMsg = useAppStore((s) => s.streamingMsg !== null);
+  const planMode = useAppStore((s) => s.planMode);
   const streaming = Boolean(agentState?.isStreaming) || hasStreamMsg;
   const queued = agentState?.queuedMessageCount ?? 0;
 
@@ -110,6 +111,11 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
 
       <h1 className="min-w-0 flex-1 truncate text-[14px] font-medium text-zinc-800 dark:text-zinc-100">
         {title}
+        {planMode && (
+          <span className="ml-2 rounded-full bg-accent/10 px-2 py-0.5 align-middle text-[10.5px] font-semibold uppercase tracking-wide text-accent">
+            {t("plan.badge")}
+          </span>
+        )}
         {queued > 0 && (
           <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
             {t("topbar.queued", { n: queued })}

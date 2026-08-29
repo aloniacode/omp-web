@@ -55,6 +55,13 @@ export const messages = {
     "topbar.exportHtml": "Export HTML",
     "topbar.compact": "Compact context",
 
+    "plan.toggle": "Plan mode (plan before executing)",
+    "plan.badge": "Plan",
+    "plan.reviewTitle": "Plan ready for review",
+    "plan.approve": "Approve & implement",
+    "plan.copy": "Copy plan",
+    "plan.copied": "Copied",
+
     "chat.agentWorking": "Agent is thinking…",
     "chat.suggestion.1": "Explain this codebase",
     "chat.suggestion.2": "Find and fix failing tests",
@@ -230,6 +237,13 @@ export const messages = {
     "topbar.delete": "删除",
     "topbar.exportHtml": "导出 HTML",
     "topbar.compact": "压缩上下文",
+
+    "plan.toggle": "规划模式（先规划后执行）",
+    "plan.badge": "规划模式",
+    "plan.reviewTitle": "计划已就绪，等待审阅",
+    "plan.approve": "批准并实施",
+    "plan.copy": "复制计划",
+    "plan.copied": "已复制",
 
     "chat.agentWorking": "智能体思考中…",
     "chat.suggestion.1": "解释这个代码库",

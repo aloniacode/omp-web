@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { OmpRpcClient, type ConnStatus } from "../rpc/client";
 import { setComposerText } from "./composerText";
 import { storeT } from "../i18n";
+import { buildExecutePrompt, stripPlanContract, wrapPlanPrompt } from "../lib/planMode";
 import type {
   AgentEndFrame,
   ImageContent,
@@ -81,6 +82,10 @@ export interface AppState {
   /** Prompt accepted; waiting for the agent's first event (working indicator). */
   awaitingAgent: boolean;
   modelsLoaded: boolean;
+  /** Plan mode: prompts are wrapped in a plan-only contract; replies get a review bar. */
+  planMode: boolean;
+  /** Message index where plan mode was enabled; the review bar only considers later turns. */
+  planModeFromIndex: number | null;
 }
 
 export interface StoreActions {
@@ -91,6 +96,9 @@ export interface StoreActions {
   renameSession(name: string): void;
   deleteSession(path: string): Promise<void>;
   compact(customInstructions?: string): void;
+  setPlanMode(enabled: boolean): void;
+  /** Approve a reviewed plan: leave plan mode and send the implement prompt. */
+  approvePlan(plan: string): void;
   respondExtUi(request: ExtensionUiRequest, outcome: ExtOutcome): void;
   dismissNotice(id: number): void;
   /** Surface a toast to the user (e.g. rejected paste feedback). */
@@ -137,6 +145,8 @@ const initialState: AppState = {
   extStack: [],
   stopping: false,
   awaitingAgent: false,
+  planMode: false,
+  planModeFromIndex: null,
 };
 
 export function isOptimistic(entry: ChatEntry): entry is OptimisticUserMessage {
@@ -151,6 +161,19 @@ function textOfToolResult(result: ToolResultLike | undefined): string {
     if (block.type === "text") text += block.text;
   }
   return text;
+}
+
+/**
+ * The agent transcript stores what went over the wire; plan-mode prompts were
+ * wrapped with the planning contract. Strip it back off so committed history
+ * and reloaded sessions show the user's original wording.
+ */
+function unwrapPlanPrompt(entry: AgentMessage): AgentMessage {
+  if (entry.role === "user" && typeof entry.content === "string") {
+    const stripped = stripPlanContract(entry.content);
+    if (stripped !== entry.content) return { ...entry, content: stripped };
+  }
+  return entry;
 }
 
 let noticeSeq = 1;
@@ -234,7 +257,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
           limit: 256,
         });
         if (!resp.success || !resp.data) throw new Error(resp.error ?? "paged messages unavailable");
-        acc.push(...(resp.data.messages ?? []));
+        acc.push(...(resp.data.messages ?? []).map(unwrapPlanPrompt));
         if (!resp.data.nextCursor) return acc;
         cursor = resp.data.nextCursor;
       }
@@ -242,7 +265,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     } catch {
       // Legacy/v1 fallback or transient busy: best-effort monolithic snapshot.
       const resp = await client.request<{ messages: AgentMessage[] }>({ type: "get_messages" });
-      if (resp.success && Array.isArray(resp.data?.messages)) return resp.data.messages;
+      if (resp.success && Array.isArray(resp.data?.messages)) return resp.data.messages.map(unwrapPlanPrompt);
       return acc;
     }
   };
@@ -286,7 +309,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       case "agent_end": {
         const end = frame as AgentEndFrame;
         if (end.isTerminal === false) break; // maintenance pause, more work scheduled
-        const committed = Array.isArray(end.messages) ? end.messages : null;
+        const committed = Array.isArray(end.messages) ? end.messages.map(unwrapPlanPrompt) : null;
         set(() => ({
           ...(committed ? { messages: committed } : null),
           streamingMsg: null,
@@ -457,6 +480,8 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
             stats: null,
             stopping: false,
             awaitingAgent: false,
+            planMode: false,
+            planModeFromIndex: null,
           });
           void initSession();
         }
@@ -503,9 +528,12 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
         ],
         awaitingAgent: true,
       }));
+      // Plan mode wraps what goes on the wire; the visible bubble keeps the
+      // user's original wording.
+      const wire = state.planMode ? wrapPlanPrompt(trimmed) : trimmed;
       const command = streaming
-        ? ({ type: "prompt", message: trimmed, images, streamingBehavior: "followUp" } as const)
-        : ({ type: "prompt", message: trimmed, images } as const);
+        ? ({ type: "prompt", message: wire, images, streamingBehavior: "followUp" } as const)
+        : ({ type: "prompt", message: wire, images } as const);
       client
         .request<{ agentInvoked?: boolean }>(command)
         .then((resp) => {
@@ -562,6 +590,19 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
         void client.request({ type: "get_state" });
         void client.request({ type: "get_session_stats" });
       }).catch((err: unknown) => fail(err, "compact"));
+    },
+
+    setPlanMode(enabled: boolean) {
+      if (enabled) {
+        set({ planMode: true, planModeFromIndex: get().messages.length });
+        return;
+      }
+      set({ planMode: false, planModeFromIndex: null });
+    },
+
+    approvePlan(plan: string) {
+      set({ planMode: false, planModeFromIndex: null });
+      actions.sendPrompt(buildExecutePrompt(plan));
     },
 
     setModel(provider: string, modelId: string) {

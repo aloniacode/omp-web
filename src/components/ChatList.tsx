@@ -1,11 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AssistantMessage, ToolResultMessage } from "../rpc/types";
-import { useAppStore } from "../state/store";
+import { useActions, useAppStore } from "../state/store";
 import type { ChatEntry } from "../state/store";
 import { setComposerText } from "../state/composerText";
 import { useI18n } from "../i18n";
+import { assistantText } from "../lib/format";
+import { extractPlan } from "../lib/planMode";
 import { MessageView, TurnRow } from "./MessageView";
-import { Bot as IconBot } from "lucide-react";
+import { Bot as IconBot, Check as IconCheck, ClipboardList as IconPlan, Copy as IconCopy } from "lucide-react";
 import { ScrollArea } from "./ScrollArea";
 
 const SUGGESTION_KEYS = ["chat.suggestion.1", "chat.suggestion.2", "chat.suggestion.3"] as const;
@@ -69,9 +71,65 @@ function WorkingRow() {
   return <AgentWorkingRow />;
 }
 
+/**
+ * Plan-mode review bar: when plan mode is on and the latest turn's reply
+ * carries a `plan` block, offer approve-to-implement (exits plan mode) and a
+ * copy shortcut. Mirrors oh-my-pi's plan review step.
+ */
+function PlanReviewBar({ plan }: { plan: string }) {
+  const { t } = useI18n();
+  const actions = useActions();
+  const connected = useAppStore((s) => s.connStatus === "connected" && s.agentReady);
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(copyTimer.current), []);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(plan);
+      setCopied(true);
+      window.clearTimeout(copyTimer.current);
+      copyTimer.current = window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard unavailable — ignore
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-accent/40 bg-accent/5 px-4 py-3">
+      <div className="flex items-center gap-2 text-[12.5px] font-medium text-accent">
+        <IconPlan size={14} />
+        {t("plan.reviewTitle")}
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={!connected}
+          onClick={() => actions.approvePlan(plan)}
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <IconCheck size={13} />
+          {t("plan.approve")}
+        </button>
+        <button
+          type="button"
+          disabled={!connected}
+          onClick={() => void copy()}
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12.5px] text-zinc-600 transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+        >
+          <IconCopy size={13} />
+          {copied ? t("plan.copied") : t("plan.copy")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ChatList() {
   const messages = useAppStore((s) => s.messages);
   const activePath = useAppStore((s) => s.activePath);
+  const planMode = useAppStore((s) => s.planMode);
+  const planModeFromIndex = useAppStore((s) => s.planModeFromIndex);
   const hasLiveContent = useAppStore((s) => s.streamingMsg !== null || s.toolRuns.length > 0 || s.awaitingAgent);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -125,6 +183,25 @@ export function ChatList() {
 
   const hasContent = messages.length > 0 || hasLiveContent;
 
+  // Plan review candidate: the `plan` block in the trailing assistant turn.
+  // Scans backwards across the turn's assistant messages (a turn may hold
+  // several); only turns begun after plan mode was enabled are considered.
+  const planCandidate = useMemo(() => {
+    if (!planMode || hasLiveContent) return null;
+    let text = "";
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const entry = messages[i];
+      if (entry.role === "assistant") {
+        if (planModeFromIndex != null && i < planModeFromIndex) return null;
+        text = `${assistantText(entry.content)}\n${text}`;
+        continue;
+      }
+      if (entry.role === "toolResult") continue; // interleaved tool output
+      break; // user message opens the turn
+    }
+    return extractPlan(text);
+  }, [messages, planMode, planModeFromIndex, hasLiveContent]);
+
   // Group committed messages into turns: a user message opens a turn, and all
   // following assistant messages (thinking / tool calls / partial answers)
   // fold into one summary row once the turn is history.
@@ -154,6 +231,7 @@ export function ChatList() {
 
           <StreamingRow resultsByCallId={resultsByCallId} />
           <WorkingRow />
+          {planCandidate && <PlanReviewBar plan={planCandidate} />}
         </div>
       )}
     </ScrollArea>
