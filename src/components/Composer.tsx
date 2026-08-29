@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ClipboardEvent as ReactClipboardEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
+  ArchiveRestore as IconArchive,
+  ArrowRightLeft as IconHandoff,
   AtSign as IconAtSign,
   ClipboardList as IconPlan,
+  Flag as IconFlag,
   Image as IconImage,
   Plus as IconPlus,
   Send as IconSend,
@@ -52,6 +55,14 @@ interface Attachment {
 const TRIGGER_FILE = /@([\w\-./]*)$/;
 /** Slash-command token at the start of the input or after whitespace. */
 const TRIGGER_COMMAND = /(^|\s)\/([a-z0-9-]*)$/i;
+
+/** Palette icon per command name; skills fall back to the zap icon. */
+const COMMAND_ICONS: Record<string, typeof IconPlan> = {
+  plan: IconPlan,
+  goal: IconFlag,
+  handoff: IconHandoff,
+  compact: IconArchive,
+};
 
 /** Goal lifecycle states the /goal subcommands operate on. */
 function isGoalOperable(goal: Goal | null): goal is Goal {
@@ -121,6 +132,7 @@ export function Composer() {
   const composerText = useSyncExternalStore(subscribeComposerText, getComposerText);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
   const filesCache = useRef<Map<string, string[]>>(new Map());
   const fileFetchSeq = useRef(0);
 
@@ -129,6 +141,13 @@ export function Composer() {
   const [fileResults, setFileResults] = useState<string[]>([]);
   const [skills, setSkills] = useState<Array<{ name: string; description: string; source: string }>>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+
+  // Keep the highlighted palette item in view as arrows move the selection.
+  useEffect(() => {
+    const popup = popupRef.current;
+    if (!popup) return;
+    popup.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+  }, [selected, mention]);
   // Auto-grow with content, clamped.
   useEffect(() => {
     const el = textareaRef.current;
@@ -455,14 +474,16 @@ export function Composer() {
         {/* Mention / command palette popup */}
         {mention && (
           <div
+            ref={popupRef}
             role={mention.kind === "command" ? "listbox" : undefined}
-            className="absolute bottom-full left-0 z-30 mb-2 max-h-64 w-80 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+            className="absolute bottom-full left-0 z-30 mb-2 max-h-64 w-full overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
           >
             {mention.kind === "command"
               ? filteredCommands.map((item, index) => {
                   // Commands and skills are pre-ordered in one flat list; a
                   // header renders whenever the group changes.
                   const showHeader = index === 0 || filteredCommands[index - 1].group !== item.group;
+                  const ItemIcon = item.group === "commands" ? COMMAND_ICONS[item.name] : IconZap;
                   return (
                     <div key={`${item.group}:${item.name}`}>
                       {showHeader && (
@@ -479,17 +500,28 @@ export function Composer() {
                           applyMention(index);
                         }}
                         onMouseEnter={() => setSelected(index)}
-                        className={`block w-full px-3 py-1.5 text-left text-[13px] ${
+                        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] ${
                           index === selected ? "bg-accent/10 text-accent" : "text-zinc-700 dark:text-zinc-200"
                         }`}
                       >
-                        <span className="block truncate font-mono text-[12px]">
-                          /{item.name}
-                          {item.source ? <span className="ml-1.5 text-[10px] text-zinc-400">{item.source}</span> : null}
-                        </span>
-                        {item.description && (
-                          <span className="block truncate text-[11px] text-zinc-400">{item.description}</span>
+                        {ItemIcon && (
+                          <span
+                            className={`flex size-5 shrink-0 items-center justify-center rounded ${
+                              index === selected ? "text-accent" : "text-zinc-400 dark:text-zinc-500"
+                            }`}
+                          >
+                            <ItemIcon size={12} />
+                          </span>
                         )}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-mono text-[12px]">
+                            /{item.name}
+                            {item.source ? <span className="ml-1.5 text-[10px] text-zinc-400">{item.source}</span> : null}
+                          </span>
+                          {item.description && (
+                            <span className="block truncate text-[11px] text-zinc-400">{item.description}</span>
+                          )}
+                        </span>
                       </button>
                     </div>
                   );
