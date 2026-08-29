@@ -1,5 +1,7 @@
 # omp web
 
+English | [简体中文](./README.zh-CN.md)
+
 A web user interface for the [oh-my-pi](https://github.com/can1357/oh-my-pi) coding agent.
 This project ships **only the UI and the communication layer** — all agent capability lives in
 your local `omp` binary; nothing is reimplemented here.
