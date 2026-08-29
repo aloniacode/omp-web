@@ -17,6 +17,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { WebSocketServer } from "ws";
@@ -32,7 +33,11 @@ const EXTRA_OMP_ARGS = process.env.OMP_ARGS ? process.env.OMP_ARGS.split(" ").fi
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const OMP_BIN = process.env.OMP_BIN ?? "omp";
-/** Agent working directory; switchable at runtime via POST /api/cwd. */
+/**
+ * Agent working directory. `ompCwd` is the default for fresh connections;
+ * each connection can override it via POST /api/cwd (REST calls carry the
+ * connection id), so one tab switching projects never disturbs another.
+ */
 let ompCwd = process.env.OMP_CWD ?? process.cwd();
 const DIST_DIR = path.join(__dirname, "..", "dist");
 const MAX_LINE_BYTES = 128 * 1024 * 1024;
@@ -65,7 +70,7 @@ const SKIP_DIRS = new Set([
   ".vscode",
 ]);
 
-async function searchFiles(query, limit = 24) {
+async function searchFiles(cwd, query, limit = 24) {
   const results = [];
   const needle = query.toLowerCase();
   async function walk(dir, rel, depth) {
@@ -87,15 +92,15 @@ async function searchFiles(query, limit = 24) {
       }
     }
   }
-  await walk(ompCwd, "", 0);
+  await walk(cwd, "", 0);
   return results;
 }
 
 /** Skills from the global agent dir plus the project's .omp/skills. */
-async function listSkills() {
+async function listSkills(cwd) {
   const roots = [
     { dir: path.join(os.homedir(), ".omp", "agent", "skills"), source: "global" },
-    { dir: path.join(ompCwd, ".omp", "skills"), source: "project" },
+    { dir: path.join(cwd, ".omp", "skills"), source: "project" },
   ];
   const out = [];
   for (const { dir, source } of roots) {
@@ -200,7 +205,7 @@ async function deleteSessionFile(requestedPath) {
 // ---------------------------------------------------------------------------
 
 class RpcChild {
-  constructor(onFrame, onExit, log) {
+  constructor(cwd, onFrame, onExit, log) {
     this.onFrame = onFrame;
     this.onExit = onExit;
     this.log = log;
@@ -209,7 +214,7 @@ class RpcChild {
     this.stderrTail = [];
 
     this.child = spawn(OMP_BIN, ["--mode", "rpc", "--continue", ...EXTRA_OMP_ARGS], {
-      cwd: ompCwd,
+      cwd,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
@@ -390,6 +395,13 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 403, { error: "cross-origin request rejected" });
   }
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+  // cwd-scoped endpoints resolve against the calling connection's directory
+  // when the browser announces it (each tab can sit in a different project).
+  const connectionCwd = () => {
+    const id = req.headers["x-omp-web-connection"];
+    if (typeof id === "string" && connections.has(id)) return connections.get(id).cwd;
+    return ompCwd;
+  };
   try {
     if (url.pathname === "/api/health") {
       const found = whichOmp();
@@ -401,19 +413,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/files" && req.method === "GET") {
       const query = url.searchParams.get("q") ?? "";
       const limit = Math.min(Number(url.searchParams.get("limit") ?? 24) || 24, 50);
-      return sendJson(res, 200, { files: await searchFiles(query, limit) });
+      return sendJson(res, 200, { files: await searchFiles(connectionCwd(), query, limit) });
     }
     if (url.pathname === "/api/skills" && req.method === "GET") {
-      return sendJson(res, 200, { skills: await listSkills() });
+      return sendJson(res, 200, { skills: await listSkills(connectionCwd()) });
     }
     if (url.pathname === "/api/branches" && req.method === "GET") {
-      return sendJson(res, 200, await listBranches(ompCwd));
+      return sendJson(res, 200, await listBranches(connectionCwd()));
     }
     if (url.pathname === "/api/branches" && req.method === "POST") {
       const body = await readJsonBody(req);
       const name = typeof body.name === "string" ? body.name.trim() : "";
       if (!name) return sendJson(res, 400, { error: "missing branch name" });
-      return sendJson(res, 200, await checkoutBranch(ompCwd, name, body.create === true));
+      return sendJson(res, 200, await checkoutBranch(connectionCwd(), name, body.create === true));
     }
     if (url.pathname === "/api/scratch" && req.method === "POST") {
       // Reject oversized uploads before buffering them.
@@ -425,7 +437,7 @@ const server = http.createServer(async (req, res) => {
       if (Buffer.byteLength(String(body.text ?? ""), "utf8") > MAX_UPLINK_BYTES) {
         return sendJson(res, 413, { error: "scratch content exceeds the uplink cap" });
       }
-      return sendJson(res, 200, await writeScratchFile(ompCwd, body.text));
+      return sendJson(res, 200, await writeScratchFile(connectionCwd(), body.text));
     }
     if (url.pathname === "/api/sessions" && req.method === "GET") {
       const limit = Math.min(Number(url.searchParams.get("limit") ?? 60) || 60, 200);
@@ -438,7 +450,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, await deleteSessionFile(target));
     }
     if (url.pathname === "/api/projects" && req.method === "GET") {
-      // Distinct session cwds, plus the current working directory.
+      // Distinct session cwds, plus the calling connection's working directory.
       const sessions = await listSessions({ limit: 200 });
       const byCwd = new Map();
       for (const session of sessions) {
@@ -448,11 +460,12 @@ const server = http.createServer(async (req, res) => {
         entry.lastUsedMs = Math.max(entry.lastUsedMs, session.mtimeMs);
         byCwd.set(session.cwd, entry);
       }
+      const connCwd = connectionCwd();
       const projects = [...byCwd.values()].sort((a, b) => b.lastUsedMs - a.lastUsedMs);
-      if (![...byCwd.keys()].some((cwd) => path.resolve(cwd) === path.resolve(ompCwd))) {
-        projects.unshift({ cwd: ompCwd, sessions: 0, lastUsedMs: 0 });
+      if (![...byCwd.keys()].some((cwd) => path.resolve(cwd) === path.resolve(connCwd))) {
+        projects.unshift({ cwd: connCwd, sessions: 0, lastUsedMs: 0 });
       }
-      return sendJson(res, 200, { projects, current: ompCwd });
+      return sendJson(res, 200, { projects, current: connCwd });
     }
     if (url.pathname === "/api/fs" && req.method === "GET") {
       const requested = (url.searchParams.get("path") ?? "").trim();
@@ -491,10 +504,22 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: `directory not found: ${cwd}` });
       }
       if (!stat.isDirectory()) return sendJson(res, 400, { error: `not a directory: ${cwd}` });
-      if (path.resolve(ompCwd) === cwd) return sendJson(res, 200, { ok: true, cwd: ompCwd, changed: false });
+      // Remember the latest choice as the default for fresh connections.
+      const globalChanged = path.resolve(ompCwd) !== cwd;
       ompCwd = cwd;
-      // Dispose agent children so the browser's reconnect respawns them in
-      // the new project directory.
+      const headerId = req.headers["x-omp-web-connection"];
+      const connection = typeof headerId === "string" ? connections.get(headerId) : undefined;
+      if (connection) {
+        // Connection-scoped switch: only this tab's agent respawns; other
+        // connections keep running in their own directory.
+        const connectionChanged = path.resolve(connection.cwd) !== cwd;
+        connection.cwd = cwd;
+        if (connectionChanged && connection.child) connection.child.dispose(true);
+        console.log(`[bridge] connection ${String(headerId).slice(0, 8)} cwd → ${cwd}`);
+        return sendJson(res, 200, { ok: true, cwd, changed: connectionChanged });
+      }
+      // Legacy callers (no connection id): recycle every agent child.
+      if (!globalChanged) return sendJson(res, 200, { ok: true, cwd, changed: false });
       for (const child of children) child.dispose(true);
       console.log(`[bridge] cwd switched to ${ompCwd}`);
       return sendJson(res, 200, { ok: true, cwd: ompCwd, changed: true });
@@ -534,6 +559,8 @@ server.on("error", (err) => {
 
 const wss = new WebSocketServer({ noServer: true });
 const children = new Set();
+/** Active browser connections: id → { cwd, child } for connection-scoped cwd. */
+const connections = new Map();
 
 server.on("upgrade", (req, socket, head) => {
   // WebSockets are not subject to CORS: without this check any page could
@@ -554,10 +581,19 @@ server.on("upgrade", (req, socket, head) => {
 
 wss.on("connection", (ws) => {
   console.log("[bridge] ws connected — spawning agent");
+  const connectionId = randomUUID();
+  const connection = { cwd: ompCwd, child: null };
+  connections.set(connectionId, connection);
   let closed = false;
 
+  ws.send(JSON.stringify({ type: "bridge_event", event: "connection", id: connectionId }));
+
   const child = new RpcChild(
+    connection.cwd,
     (frame) => {
+      // bridge_event/connection is bridge→client only; a child (or extension)
+      // must not rebind the tab's connection identity.
+      if (frame.type === "bridge_event" && frame.event === "connection") return;
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
     },
     (code, signal) => {
@@ -570,6 +606,7 @@ wss.on("connection", (ws) => {
     (msg) => console.log(`[bridge:${child.pid}] ${msg}`),
   );
 
+  connection.child = child;
   if (child.pid) children.add(child);
 
   ws.on("message", (raw) => {
@@ -606,6 +643,7 @@ wss.on("connection", (ws) => {
   ws.on("close", () => {
     clearInterval(heartbeat);
     closed = true;
+    connections.delete(connectionId);
     if (child.pid) children.delete(child);
     console.log(`[bridge] ws closed — disposing agent ${child.pid ?? "(unspawned)"}`);
     child.dispose(true);

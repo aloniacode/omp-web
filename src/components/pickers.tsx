@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { useActions, useAppStore } from "../state/store";
+import { apiFetch } from "../rpc/connection";
 import { useI18n } from "../i18n";
 import type { BranchListResult, ModelInfo } from "../rpc/types";
 import { THINKING_LEVELS } from "../rpc/types";
@@ -186,7 +187,7 @@ export function BranchPicker() {
   const [busy, setBusy] = useState(false);
 
   const refresh = () => {
-    fetch("/api/branches")
+    apiFetch("/api/branches")
       .then(async (res) => {
         if (!res.ok) throw new Error(`branches failed (${res.status})`);
         const body = (await res.json()) as Partial<BranchInfo>;
@@ -209,7 +210,7 @@ export function BranchPicker() {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/branches", {
+      const res = await apiFetch("/api/branches", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name: name.trim(), create }),
@@ -356,7 +357,7 @@ export function ProjectPicker() {
     setBrowseError(false);
     setBrowse({ path: dir, parent: null, entries: [] });
     try {
-      const res = await fetch(`/api/fs?path=${encodeURIComponent(dir)}`);
+      const res = await apiFetch(`/api/fs?path=${encodeURIComponent(dir)}`);
       const body = (await res.json()) as Partial<FsDir> & { error?: string };
       if (!res.ok) throw new Error(body.error ?? "fs error");
       setBrowse({

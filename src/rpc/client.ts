@@ -1,5 +1,6 @@
 import type { RpcCommand, RpcFrame, RpcResponseFrame } from "./types";
 import { coalesceKey } from "../lib/idempotency";
+import { setConnectionId } from "./connection";
 
 export type ConnStatus = "connecting" | "connected" | "reconnecting" | "closed";
 
@@ -176,6 +177,12 @@ export class OmpRpcClient {
           pending.resolve(frame);
         }
       }
+      // The bridge tags each connection so REST calls can be routed to this
+      // tab's agent working directory.
+      const bridgeFrame = frame as { type?: string; event?: string; id?: string };
+      if (bridgeFrame.type === "bridge_event" && bridgeFrame.event === "connection" && typeof bridgeFrame.id === "string") {
+        setConnectionId(bridgeFrame.id);
+      }
       // Tolerant wire union: runtime payloads outrun the static surface.
       const rpcFrame = frame as RpcFrame;
       for (const sink of this.#frameSinks) sink(rpcFrame);
@@ -187,6 +194,7 @@ export class OmpRpcClient {
 
     ws.onclose = () => {
       this.#ws = null;
+      setConnectionId(null);
       this.#failAllPending(new Error("connection to agent bridge lost"));
       if (this.#userClosed || this.#disposed) {
         this.#setStatus("closed");

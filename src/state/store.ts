@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { OmpRpcClient, type ConnStatus } from "../rpc/client";
+import { apiFetch } from "../rpc/connection";
 import { setComposerText } from "./composerText";
 import { storeT } from "../i18n";
 import { buildExecutePrompt, stripPlanContract, wrapPlanPrompt } from "../lib/planMode";
@@ -256,7 +257,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     addNotice("error", err instanceof Error ? err.message : `${what} failed`);
 
   const refreshSessions = () => {
-    fetch("/api/sessions?limit=80")
+    apiFetch("/api/sessions?limit=80")
       .then((res) => res.json())
       .then((body: { sessions?: SessionMeta[] }) => {
         if (Array.isArray(body.sessions)) set({ sessions: body.sessions });
@@ -265,7 +266,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
   };
 
   const refreshProjects = () => {
-    fetch("/api/projects")
+    apiFetch("/api/projects")
       .then((res) => res.json())
       .then((body: { projects?: ProjectInfo[]; current?: string }) => {
         if (Array.isArray(body.projects)) {
@@ -636,7 +637,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
             },
           );
         };
-        fetch("/api/scratch", {
+        apiFetch("/api/scratch", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ text: trimmed }),
@@ -679,7 +680,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
 
     async deleteSession(path: string) {
       try {
-        const res = await fetch(`/api/sessions?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+        const res = await apiFetch(`/api/sessions?path=${encodeURIComponent(path)}`, { method: "DELETE" });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(body.error ?? `delete failed (${res.status})`);
@@ -761,7 +762,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     refreshProjects,
 
     switchProject(cwd: string) {
-      fetch("/api/cwd", {
+      apiFetch("/api/cwd", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ cwd }),
@@ -841,7 +842,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
 
     async recheckHealth() {
       try {
-        const res = await fetch("/api/health");
+        const res = await apiFetch("/api/health");
         const body = (await res.json()) as {
           ok?: boolean;
           omp?: { resolved?: string | null; cwd?: string };
@@ -892,7 +893,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     );
   });
   client.start();
-  fetch("/api/health")
+  apiFetch("/api/health")
     .then((res) => res.json())
     .then((body: { ok?: boolean; omp?: { resolved?: string | null; cwd?: string } }) => {
       set({

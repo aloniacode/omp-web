@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useI18n, type MessageKey } from "../i18n";
 import { useActions, useAppStore } from "../state/store";
+import { apiFetch } from "../rpc/connection";
 import {
   getComposerText,
   setComposerText,
@@ -161,7 +162,7 @@ export function Composer() {
   useEffect(() => {
     if (mention?.kind !== "command" || skillsLoaded.current) return;
     skillsLoaded.current = true;
-    fetch("/api/skills")
+    apiFetch("/api/skills")
       .then((res) => res.json())
       .then((body: { skills?: Array<{ name: string; description: string; source: string }> }) => {
         if (Array.isArray(body.skills)) setSkills(body.skills);
@@ -211,7 +212,7 @@ export function Composer() {
         return;
       }
       const seq = ++fileFetchSeq.current;
-      fetch(`/api/files?q=${encodeURIComponent(query)}`)
+      apiFetch(`/api/files?q=${encodeURIComponent(query)}`)
         .then((res) => res.json())
         .then((body: { files?: string[] }) => {
           if (seq !== fileFetchSeq.current) return; // a newer query superseded this one
