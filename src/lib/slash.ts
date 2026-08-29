@@ -2,7 +2,7 @@
  * TUI-style quick commands the composer intercepts before sending anything to
  * the agent. Extracted as a pure parser so the surface is unit-testable.
  */
-export const LOCAL_SLASH_COMMANDS = ["compact", "new", "export", "stop", "name", "plan", "goal", "handoff"] as const;
+export const LOCAL_SLASH_COMMANDS = ["compact", "plan", "goal", "handoff"] as const;
 
 const SLASH_RE = new RegExp(`^\\/(${LOCAL_SLASH_COMMANDS.join("|")})(?:\\s+([\\s\\S]*))?$`);
 
@@ -35,10 +35,6 @@ export const LOCAL_COMMAND_ITEMS: ReadonlyArray<{
   { name: "goal", kind: "insert" },
   { name: "handoff", kind: "exec" },
   { name: "compact", kind: "exec" },
-  { name: "new", kind: "exec" },
-  { name: "export", kind: "exec" },
-  { name: "stop", kind: "exec" },
-  { name: "name", kind: "insert" },
 ];
 
 export interface SkillEntry {

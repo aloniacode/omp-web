@@ -21,10 +21,6 @@ describe("buildCommandItems", () => {
       "goal",
       "handoff",
       "compact",
-      "new",
-      "export",
-      "stop",
-      "name",
       "review",
       "release-notes",
     ]);
@@ -35,7 +31,6 @@ describe("buildCommandItems", () => {
     expect(byName.get("plan")?.kind).toBe("exec");
     expect(byName.get("handoff")?.kind).toBe("exec");
     expect(byName.get("goal")?.kind).toBe("insert");
-    expect(byName.get("name")?.kind).toBe("insert");
     expect(byName.get("review")?.kind).toBe("insert");
   });
 

@@ -274,21 +274,6 @@ export function Composer() {
       case "compact":
         actions.compact(arg || undefined);
         return true;
-      case "new":
-        actions.newChat();
-        return true;
-      case "export":
-        actions.exportHtml();
-        return true;
-      case "stop":
-        actions.stop();
-        return true;
-      case "name":
-        if (arg) {
-          actions.renameSession(arg);
-          return true;
-        }
-        return false;
       case "plan":
         // `/plan <prompt>` enters plan mode and submits; bare `/plan` toggles.
         // Upstream: plan mode is blocked while a goal is active.
