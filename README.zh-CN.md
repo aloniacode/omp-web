@@ -82,6 +82,8 @@ pnpm start        # http://127.0.0.1:8787
 并以文件引用发送 —— 若该项目本身是 git 仓库,建议把该目录加入 `.gitignore`。
 bridge 绑定 `127.0.0.1` 且**无鉴权** ——
 它能驱动你的智能体并在 agent 目录中执行 git,请仅在本地使用。
+来自非环回地址的跨源请求(含 WebSocket 升级)会被拒绝,因此 omp-web 运行期间浏览
+其他网页无法驱动 bridge(DNS 重绑定是文档中注明的例外,见 `server/origin-guard.mjs`)。
 
 ```sh
 pnpm vitest run                            # 单元测试(纯函数 + 服务端模块)

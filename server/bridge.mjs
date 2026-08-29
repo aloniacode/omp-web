@@ -24,6 +24,7 @@ import { parseSessionPrefix, bucketNamesForCwd } from "./session-meta.mjs";
 import { FrameAssembler } from "./rpc-frame.mjs";
 import { listBranches, checkoutBranch } from "./git-branches.mjs";
 import { writeScratchFile } from "./scratch.mjs";
+import { isAllowedOrigin } from "./origin-guard.mjs";
 import { NEGOTIATED_MAX_REASSEMBLED_BYTES, PROTOCOL_REQUEST_ID, PROTOCOL_VERSION, hasType } from "@omp-web/protocol";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -383,6 +384,11 @@ function whichOmp() {
 }
 
 const server = http.createServer(async (req, res) => {
+  // Any web page can send no-preflight requests at localhost; judge Origin
+  // before touching state (read-only GETs would be safe, the rest are not).
+  if (!isAllowedOrigin(req.headers.origin, req.headers.host)) {
+    return sendJson(res, 403, { error: "cross-origin request rejected" });
+  }
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
   try {
     if (url.pathname === "/api/health") {
@@ -530,6 +536,12 @@ const wss = new WebSocketServer({ noServer: true });
 const children = new Set();
 
 server.on("upgrade", (req, socket, head) => {
+  // WebSockets are not subject to CORS: without this check any page could
+  // drive the agent (prompts run bash) and read everything it returns.
+  if (!isAllowedOrigin(req.headers.origin, req.headers.host)) {
+    socket.destroy();
+    return;
+  }
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
   if (url.pathname !== "/ws") {
     socket.destroy();

@@ -91,6 +91,9 @@ The branch picker additionally needs `git` on the bridge's PATH. Oversized promp
 written to `<project>/.omp/scratch/` and referenced as files — add that directory to the
 project's `.gitignore` if you commit the repo. The bridge binds `127.0.0.1` and has
 **no auth** — it can drive your agent and run git in the agent directory; keep it local.
+Cross-origin requests (and WebSocket upgrades) from non-loopback origins are rejected,
+so browsing other sites while omp-web is running cannot drive the bridge (the exotic
+DNS-rebinding route is the documented exception — see `server/origin-guard.mjs`).
 
 ```sh
 pnpm vitest run                            # unit tests (pure helpers + server modules)
