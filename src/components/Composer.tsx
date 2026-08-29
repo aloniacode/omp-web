@@ -29,7 +29,7 @@ import {
   parseLocalSlashCommand,
   type CommandItem,
 } from "../lib/slash";
-import { ModelPicker, ProjectPicker } from "./pickers";
+import { ModelPicker, ProjectPicker, BranchPicker } from "./pickers";
 import { ContextDisplay } from "./ContextDisplay";
 import { Button } from "./ui/button";
 import {
@@ -618,6 +618,7 @@ export function Composer() {
           <div className="flex items-center gap-1 pt-1">
             <PlusMenu onPick={onPlusPick} disabled={!connected} />
             <ProjectPicker />
+            <BranchPicker />
             <ModelPicker compact />
             <ContextDisplay />
             <div className="min-w-0 flex-1" />

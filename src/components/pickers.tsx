@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { ArrowUp as IconArrowUp, ChevronDown as IconChevronDown, Folder as IconFolder } from "lucide-react";
+import {
+  ArrowUp as IconArrowUp,
+  Check as IconCheck,
+  ChevronDown as IconChevronDown,
+  Folder as IconFolder,
+  GitBranch as IconGitBranch,
+  Plus as IconPlus,
+} from "lucide-react";
 
 import { useActions, useAppStore } from "../state/store";
 import { useI18n } from "../i18n";
@@ -156,6 +163,145 @@ function dirName(cwd: string): string {
   const trimmed = cwd.replace(/[\\/]+$/, "");
   const base = trimmed.split(/[\\/]/).pop() ?? trimmed;
   return base || trimmed;
+}
+
+interface BranchInfo {
+  repo: boolean;
+  current: string | null;
+  branches: Array<{ name: string; current: boolean }>;
+  /** True when the branch list could not be fetched (transport error). */
+  failed?: boolean;
+}
+
+/**
+ * Git branch switcher for the project the agent works in (bridge
+ * /api/branches): lists local branches, checks one out, and creates + checks
+ * out a new branch. Operations run in the bridge's current agent cwd, so the
+ * picker follows ProjectPicker.
+ */
+export function BranchPicker() {
+  const actions = useActions();
+  const { t } = useI18n();
+  const projectCwd = useAppStore((s) => s.projectCwd ?? s.health?.ompCwd) ?? "";
+  const [open, setOpen] = useState(false);
+  const [info, setInfo] = useState<BranchInfo | null>(null);
+  const [newName, setNewName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const refresh = () => {
+    fetch("/api/branches")
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`branches failed (${res.status})`);
+        const body = (await res.json()) as Partial<BranchInfo>;
+        setInfo({ repo: Boolean(body.repo), current: body.current ?? null, branches: Array.isArray(body.branches) ? body.branches : [] });
+      })
+      .catch(() => setInfo({ repo: false, current: null, branches: [], failed: true }));
+  };
+
+  // The branch label must not outlive its project: reset on cwd switch.
+  useEffect(() => {
+    setInfo(null);
+  }, [projectCwd]);
+
+  const close = () => {
+    setOpen(false);
+    setNewName("");
+  };
+
+  const checkout = async (name: string, create: boolean) => {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/branches", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), create }),
+      });
+      const body = (await res.json()) as { ok?: boolean; current?: string; error?: string };
+      if (!res.ok || !body.ok) throw new Error(body.error ?? `checkout failed (${res.status})`);
+      actions.notify("info", t(create ? "notice.branchCreated" : "notice.branchSwitched", { branch: body.current ?? name }), "git");
+      setNewName("");
+      refresh();
+    } catch (err) {
+      actions.notify("error", err instanceof Error ? err.message : "checkout failed", "git");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const q = newName.trim().toLowerCase();
+  const filtered = info?.branches.filter((b) => !q || b.name.toLowerCase().includes(q)) ?? [];
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (next) {
+          setOpen(true);
+          refresh();
+        } else {
+          close();
+        }
+      }}
+    >
+      <PopoverTrigger
+        aria-label={t("picker.branch")}
+        className="flex h-7 max-w-[180px] min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+      >
+        <IconGitBranch size={13} className="shrink-0 opacity-60" />
+        <span className="truncate">{info?.current ?? t("picker.branch")}</span>
+        <IconChevronDown size={13} className="shrink-0 opacity-50" />
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" className="w-72 p-2">
+        {info === null ? null : info.failed ? (
+          <p className="px-2.5 py-3 text-center text-[12px] text-red-500">{t("picker.branchError")}</p>
+        ) : !info.repo ? (
+          <p className="px-2.5 py-3 text-center text-[12px] text-zinc-400">{t("picker.noRepo")}</p>
+        ) : (
+          <>
+            <div className="max-h-60 overflow-y-auto">
+              {filtered.map((branch) => (
+                <button
+                  key={branch.name}
+                  type="button"
+                  disabled={busy || branch.current}
+                  onClick={() => void checkout(branch.name, false)}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-100 disabled:cursor-default disabled:hover:bg-transparent dark:hover:bg-zinc-800 dark:disabled:hover:bg-transparent"
+                >
+                  <span className="truncate font-mono text-[12px] text-zinc-700 dark:text-zinc-200">{branch.name}</span>
+                  {branch.current && <IconCheck size={13} className="shrink-0 text-accent" />}
+                </button>
+              ))}
+              {filtered.length === 0 && (
+                <p className="px-2.5 py-3 text-center text-[12px] text-zinc-400">{t("picker.noBranches")}</p>
+              )}
+            </div>
+            <div className="mt-1 flex gap-1.5 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void checkout(newName, true);
+                }}
+                placeholder={t("picker.newBranch")}
+                className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-zinc-400 focus:border-accent dark:border-zinc-700 dark:bg-zinc-900"
+              />
+              <button
+                type="button"
+                disabled={busy || !newName.trim()}
+                onClick={() => void checkout(newName, true)}
+                title={t("picker.createBranch")}
+                className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-zinc-200 px-2 text-[11.5px] font-medium text-zinc-500 transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-400"
+              >
+                <IconPlus size={12} className="shrink-0" />
+                {t("picker.createBranch")}
+              </button>
+            </div>
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 /** Case/separator-insensitive path comparison helper. */

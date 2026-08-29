@@ -22,6 +22,7 @@ import { spawn } from "node:child_process";
 import { WebSocketServer } from "ws";
 import { parseSessionPrefix, bucketNamesForCwd } from "./session-meta.mjs";
 import { FrameAssembler } from "./rpc-frame.mjs";
+import { listBranches, checkoutBranch } from "./git-branches.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXTRA_OMP_ARGS = process.env.OMP_ARGS ? process.env.OMP_ARGS.split(" ").filter(Boolean) : [];
@@ -392,6 +393,15 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === "/api/skills" && req.method === "GET") {
       return sendJson(res, 200, { skills: await listSkills() });
+    }
+    if (url.pathname === "/api/branches" && req.method === "GET") {
+      return sendJson(res, 200, await listBranches(ompCwd));
+    }
+    if (url.pathname === "/api/branches" && req.method === "POST") {
+      const body = await readJsonBody(req);
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      if (!name) return sendJson(res, 400, { error: "missing branch name" });
+      return sendJson(res, 200, await checkoutBranch(ompCwd, name, body.create === true));
     }
     if (url.pathname === "/api/sessions" && req.method === "GET") {
       const limit = Math.min(Number(url.searchParams.get("limit") ?? 60) || 60, 200);
