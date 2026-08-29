@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   ArchiveRestore as IconCompress,
+  ArrowRightLeft as IconHandoff,
   Ellipsis as IconDots,
   ExternalLink as IconExternalLink,
   PanelLeft as IconPanelLeft,
@@ -9,7 +10,7 @@ import {
   Trash2 as IconTrash,
 } from "lucide-react";
 import { useI18n } from "../i18n";
-import { useActions, useAppStore } from "../state/store";
+import { useActions, useAppStore, selectIsStreaming } from "../state/store";
 import type { SessionMeta } from "../rpc/types";
 import { DeleteDialog, RenameDialog } from "./Sidebar";
 import { isPinned, togglePin } from "../lib/pins";
@@ -25,6 +26,8 @@ function SessionMenu({ session }: { session: SessionMeta | null }) {
   const { t } = useI18n();
   const actions = useActions();
   const hasSession = useAppStore((s) => s.sessionId != null);
+  const handoffInFlight = useAppStore((s) => s.handoffInFlight);
+  const streaming = useAppStore(selectIsStreaming);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const pinned = isPinned(session?.path ?? null);
@@ -51,6 +54,10 @@ function SessionMenu({ session }: { session: SessionMeta | null }) {
             <IconCompress size={13} className="text-zinc-400" />
             {t("topbar.compact")}
           </DropdownMenuItem>
+          <DropdownMenuItem disabled={handoffInFlight || streaming} onSelect={() => actions.handoff()}>
+            <IconHandoff size={13} className="text-zinc-400" />
+            {handoffInFlight ? t("topbar.handoffRunning") : t("topbar.handoff")}
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => actions.exportHtml()}>
             <IconExternalLink size={13} className="text-zinc-400" />
             {t("topbar.exportHtml")}
@@ -74,9 +81,8 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const sessionId = useAppStore((s) => s.sessionId);
   const sessions = useAppStore((s) => s.sessions);
   const activePath = useAppStore((s) => s.activePath);
-  const hasStreamMsg = useAppStore((s) => s.streamingMsg !== null);
   const planMode = useAppStore((s) => s.planMode);
-  const streaming = Boolean(agentState?.isStreaming) || hasStreamMsg;
+  const streaming = useAppStore(selectIsStreaming);
   const queued = agentState?.queuedMessageCount ?? 0;
 
   const title =

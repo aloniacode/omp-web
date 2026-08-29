@@ -235,6 +235,11 @@ export interface SessionStats {
   contextUsage?: ContextUsage;
 }
 
+/** Result of the native `handoff` RPC command (mirrors RpcHandoffResult). */
+export interface RpcHandoffResult {
+  savedPath?: string;
+}
+
 // ── Frames ──────────────────────────────────────────────────────────────────
 
 export interface RpcReadyFrame {
@@ -379,6 +384,7 @@ export type RpcCommand =
   | { id?: string; type: "cycle_thinking_level" }
   | { id?: string; type: "switch_session"; sessionPath: string }
   | { id?: string; type: "set_session_name"; name: string }
+  | { id?: string; type: "handoff"; customInstructions?: string }
   | { id?: string; type: "get_messages" }
   | { id?: string; type: "get_messages_page"; cursor?: string; limit?: number }
   | { id?: string; type: "get_session_stats" };

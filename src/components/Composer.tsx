@@ -20,6 +20,7 @@ import {
 import type { ImageContent } from "../rpc/types";
 import type { Goal } from "../rpc/types";
 import { buildGoalKickoff, buildGoalOpPrompt, GOAL_STATUS_KEYS, type GoalOp } from "../lib/goalMode";
+import { parseLocalSlashCommand } from "../lib/slash";
 import { ModelPicker, ProjectPicker } from "./pickers";
 import { ContextDisplay } from "./ContextDisplay";
 import { Button } from "./ui/button";
@@ -214,12 +215,11 @@ export function Composer() {
    * still reaches the agent as a normal message.
    */
   const runSlashCommand = (text: string): boolean => {
-    const match = text.match(/^\/(compact|new|export|stop|name|plan|goal)(?:\s+([\s\S]*))?$/);
-    if (!match) return false;
-    const [, cmd, rest = ""] = match;
-    const arg = rest.trim();
+    const parsed = parseLocalSlashCommand(text);
+    if (!parsed) return false;
+    const arg = parsed.arg;
     const current = useAppStore.getState();
-    switch (cmd) {
+    switch (parsed.name) {
       case "compact":
         actions.compact(arg || undefined);
         return true;
@@ -297,6 +297,9 @@ export function Composer() {
         );
         return true;
       }
+      case "handoff":
+        actions.handoff(arg || undefined);
+        return true;
       default:
         return false;
     }

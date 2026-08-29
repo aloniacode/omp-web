@@ -24,6 +24,7 @@ import type {
   ToolExecutionFrame,
   ThinkingLevel,
   ToolResultLike,
+  RpcHandoffResult,
   Usage,
   UserMessage,
 } from "../rpc/types";
@@ -91,6 +92,8 @@ export interface AppState {
   planModeFromIndex: number | null;
   /** Active session goal (goal mode), pushed by `goal_updated` events. */
   goal: Goal | null;
+  /** Handoff generation in flight (native RPC `handoff` command). */
+  handoffInFlight: boolean;
 }
 
 export interface StoreActions {
@@ -104,6 +107,8 @@ export interface StoreActions {
   setPlanMode(enabled: boolean): void;
   /** Approve a reviewed plan: leave plan mode and send the implement prompt. */
   approvePlan(plan: string): void;
+  /** Generate a handoff document and continue the session compacted from it. */
+  handoff(customInstructions?: string): void;
   respondExtUi(request: ExtensionUiRequest, outcome: ExtOutcome): void;
   dismissNotice(id: number): void;
   /** Surface a toast to the user (e.g. rejected paste feedback). */
@@ -153,10 +158,16 @@ const initialState: AppState = {
   planMode: false,
   planModeFromIndex: null,
   goal: null,
+  handoffInFlight: false,
 };
 
 export function isOptimistic(entry: ChatEntry): entry is OptimisticUserMessage {
   return "pending" in entry || "failed" in entry;
+}
+
+/** Shared streaming predicate: agent-reported state or a live streaming bubble. */
+export function selectIsStreaming(state: AppState): boolean {
+  return Boolean(state.agentState?.isStreaming) || state.streamingMsg !== null;
 }
 
 function textOfToolResult(result: ToolResultLike | undefined): string {
@@ -498,6 +509,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
             planMode: false,
             planModeFromIndex: null,
             goal: null,
+            handoffInFlight: false,
           });
           void initSession();
         }
@@ -619,6 +631,38 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     approvePlan(plan: string) {
       set({ planMode: false, planModeFromIndex: null });
       actions.sendPrompt(buildExecutePrompt(plan));
+    },
+
+    handoff(customInstructions?: string) {
+      const streaming = get().agentState?.isStreaming || get().streamingMsg !== null;
+      if (streaming) {
+        // Mirrors the TUI/RPC guard: handoff refuses mid-response.
+        addNotice("warning", storeT("notice.handoffStreaming"));
+        return;
+      }
+      if (get().handoffInFlight) {
+        addNotice("info", storeT("notice.handoffRunning"), "handoff");
+        return;
+      }
+      set({ handoffInFlight: true });
+      client
+        .request<RpcHandoffResult | null>({ type: "handoff", customInstructions })
+        .then(async (resp) => {
+          if (!resp.success) throw new Error(resp.error ?? "handoff failed");
+          // The handoff document is committed as a compaction entry, so the
+          // transcript changes shape: reload it and refresh usage stats before
+          // reporting success.
+          const epoch = ++loadEpoch;
+          const entries = await loadAllMessages();
+          if (loadEpoch !== epoch) return;
+          set({ messages: entries });
+          void client.request({ type: "get_state" });
+          void client.request({ type: "get_session_stats" });
+          const savedPath = resp.data?.savedPath;
+          addNotice("info", savedPath ? storeT("notice.handoffSavedTo", { path: savedPath }) : storeT("notice.handoffDone"), "handoff");
+        })
+        .catch((err: unknown) => fail(err, "handoff"))
+        .finally(() => set({ handoffInFlight: false }));
     },
 
     setModel(provider: string, modelId: string) {
