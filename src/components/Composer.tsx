@@ -619,9 +619,9 @@ export function Composer() {
             <PlusMenu onPick={onPlusPick} disabled={!connected} />
             <ProjectPicker />
             <BranchPicker />
+            <div className="min-w-0 flex-1" />
             <ModelPicker compact />
             <ContextDisplay />
-            <div className="min-w-0 flex-1" />
             {stopping || isStreaming ? (
               <Button
                 onClick={actions.stop}
