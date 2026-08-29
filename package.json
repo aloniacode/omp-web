@@ -1,7 +1,7 @@
 {
   "name": "omp-web",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.2.0",
   "packageManager": "pnpm@11.22.0",
   "type": "module",
   "description": "Web UI for the oh-my-pi coding agent (interface + RPC bridge only)",
