@@ -4,6 +4,8 @@ import { setComposerText } from "./composerText";
 import { storeT } from "../i18n";
 import { buildExecutePrompt, stripPlanContract, wrapPlanPrompt } from "../lib/planMode";
 import { stripGoalContract } from "../lib/goalMode";
+import { assistantText } from "../lib/format";
+import { notifyTurnEnd } from "../lib/notify";
 import type {
   AgentEndFrame,
   ImageContent,
@@ -335,6 +337,19 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
           stopping: false,
           awaitingAgent: false,
         }));
+        // Turn finished: browser notification when the page is in background
+        // (lib/notify no-ops otherwise), with the final assistant text.
+        const finalMessages = committed ?? get().messages;
+        let lastReply: AssistantMessage | null = null;
+        for (let i = finalMessages.length - 1; i >= 0; i -= 1) {
+          const entry = finalMessages[i];
+          if (entry.role === "assistant") {
+            lastReply = entry;
+            break;
+          }
+        }
+        const replyText = lastReply ? assistantText(lastReply.content) : "";
+        notifyTurnEnd(get().sessionName ?? storeT("topbar.untitled"), replyText || storeT("notice.turnDone"));
         void client.request({ type: "get_session_stats" });
         void client.request({ type: "get_state" });
         refreshSessions();

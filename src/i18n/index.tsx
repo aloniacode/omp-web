@@ -158,6 +158,7 @@ export const messages = {
     "picker.createBranch": "Create & checkout",
     "notice.branchSwitched": "Switched to branch {branch}",
     "notice.branchCreated": "Created and checked out {branch}",
+    "notice.turnDone": "The agent finished its turn",
     "notice.compacted": "Context compacted",
     "notice.handoffDone": "Session handed off — context continues from the handoff summary",
     "notice.handoffSavedTo": "Handed off — document saved: {path}",
@@ -193,6 +194,11 @@ export const messages = {
     "settings.about": "About",
     "settings.version": "Version",
     "settings.githubRepo": "GitHub repository",
+
+    "settings.notifications": "Turn-end notifications",
+    "settings.notificationsHint": "Show a browser notification when a turn finishes while the page is hidden",
+    "settings.notificationsDenied": "Notification permission was denied",
+    "settings.notificationsUnsupported": "This browser does not support notifications",
 
     "settings.omp.model": "Model",
     "settings.omp.thinking": "Thinking level",
@@ -377,6 +383,11 @@ export const messages = {
     "settings.version": "版本",
     "settings.githubRepo": "GitHub 仓库",
 
+    "settings.notifications": "回合结束通知",
+    "settings.notificationsHint": "页面在后台时，回合结束发送浏览器通知",
+    "settings.notificationsDenied": "通知权限被拒绝",
+    "settings.notificationsUnsupported": "当前浏览器不支持通知",
+
     "settings.omp.model": "模型",
     "settings.omp.thinking": "思考等级",
     "settings.omp.steering": "转向（Steering）",
@@ -436,6 +447,7 @@ export const messages = {
     "picker.createBranch": "创建并签出",
     "notice.branchSwitched": "已切换到分支 {branch}",
     "notice.branchCreated": "已创建并签出 {branch}",
+    "notice.turnDone": "智能体已完成本轮回复",
     "notice.compacted": "上下文已压缩",
     "notice.handoffDone": "已完成交接 — 上下文将从交接摘要继续",
     "notice.handoffSavedTo": "已完成交接 — 文档已保存：{path}",

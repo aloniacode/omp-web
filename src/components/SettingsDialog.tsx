@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { Check as IconCheck, ChevronDown as IconChevronDown, ExternalLink as IconExternalLink, X as IconX } from "lucide-react";
 import { useI18n } from "../i18n";
 import { useTheme, ACCENTS, type ThemePref } from "../lib/theme";
+import { notificationsEnabled, requestNotifyPermission, setNotificationsEnabled } from "../lib/notify";
 import { useActions, useAppStore } from "../state/store";
 import { THINKING_LEVELS } from "../rpc/types";
 import {
@@ -146,6 +147,27 @@ function WebSettings() {
   const { t } = useI18n();
   const { pref, setPref, accent, setAccent } = useTheme();
   const { lang, setLang } = useI18n();
+  const actions = useActions();
+  const [notify, setNotify] = useState(notificationsEnabled());
+
+  const toggleNotify = async (on: boolean) => {
+    if (!on) {
+      setNotificationsEnabled(false);
+      setNotify(false);
+      return;
+    }
+    const permission = await requestNotifyPermission();
+    if (permission === "granted") {
+      setNotificationsEnabled(true);
+      setNotify(true);
+      return;
+    }
+    actions.notify(
+      "warning",
+      t(permission === "unsupported" ? "settings.notificationsUnsupported" : "settings.notificationsDenied"),
+      "notifications",
+    );
+  };
 
   const modes: Array<{ id: ThemePref; label: string }> = [
     { id: "system", label: t("settings.themeMode.system") },
@@ -215,6 +237,12 @@ function WebSettings() {
               </button>
             ))}
           </div>
+        </Row>
+      </Section>
+
+      <Section title={t("settings.notifications")}>
+        <Row label={t("settings.notificationsHint")}>
+          <Toggle checked={notify} onChange={(v) => void toggleNotify(v)} label={t("settings.notifications")} />
         </Row>
       </Section>
 
