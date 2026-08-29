@@ -6,7 +6,7 @@ export const LOCAL_SLASH_COMMANDS = ["compact", "plan", "goal", "handoff"] as co
 
 const SLASH_RE = new RegExp(`^\\/(${LOCAL_SLASH_COMMANDS.join("|")})(?:\\s+([\\s\\S]*))?$`);
 
-/** `/name value` → { name: "name", arg: "value" }; `/name  ` → arg "" ; unknown → null. */
+/** `/handoff focus  auth` → { name: "handoff", arg: "focus  auth" }; `/handoff  ` → arg "" ; unknown → null. */
 export function parseLocalSlashCommand(text: string): { name: string; arg: string } | null {
   const match = text.match(SLASH_RE);
   if (!match) return null;
@@ -26,7 +26,7 @@ export interface CommandItem {
   source?: string;
 }
 
-/** Local commands, in palette order. Exec = no argument required. */
+/** Local commands, in palette order. Exec = runs immediately on pick. */
 export const LOCAL_COMMAND_ITEMS: ReadonlyArray<{
   name: (typeof LOCAL_SLASH_COMMANDS)[number];
   kind: "exec" | "insert";
