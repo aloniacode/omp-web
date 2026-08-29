@@ -118,7 +118,6 @@ export function Composer() {
   const connected = useAppStore((s) => s.connStatus === "connected" && s.agentReady);
   const stopping = useAppStore((s) => s.stopping);
   const isStreaming = useAppStore((s) => Boolean(s.agentState?.isStreaming));
-  const planMode = useAppStore((s) => s.planMode);
   // Explicitly non-vision current model (agent state first, then the model
   // catalog): only rejects when known to lack image support.
   const visionBlocked = useAppStore((s) => {
@@ -618,28 +617,6 @@ export function Composer() {
           />
           <div className="flex items-center gap-1 pt-1">
             <PlusMenu onPick={onPlusPick} disabled={!connected} />
-            <button
-              type="button"
-              disabled={!connected}
-              onClick={() => {
-                // Upstream: plan mode is blocked while a goal is active.
-                if (!planMode && isGoalOperable(useAppStore.getState().goal)) {
-                  actions.notify("warning", t("goal.blockedByGoal"));
-                  return;
-                }
-                actions.setPlanMode(!planMode);
-              }}
-              aria-pressed={planMode}
-              aria-label={t("plan.toggle")}
-              title={t("plan.toggle")}
-              className={`flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                planMode
-                  ? "border-accent bg-accent/10 text-accent"
-                  : "border-zinc-200 bg-white text-zinc-500 hover:border-accent hover:text-accent dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
-              }`}
-            >
-              <IconPlan size={15} />
-            </button>
             <ProjectPicker />
             <ModelPicker compact />
             <ContextDisplay />

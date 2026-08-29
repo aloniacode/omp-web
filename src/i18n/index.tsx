@@ -57,7 +57,6 @@ export const messages = {
     "topbar.handoff": "Handoff context",
     "topbar.handoffRunning": "Handing off…",
 
-    "plan.toggle": "Plan mode (plan before executing)",
     "plan.badge": "Plan",
     "plan.reviewTitle": "Plan ready for review",
     "plan.approve": "Approve & implement",
@@ -270,7 +269,6 @@ export const messages = {
     "topbar.handoff": "交接上下文",
     "topbar.handoffRunning": "交接中…",
 
-    "plan.toggle": "规划模式（先规划后执行）",
     "plan.badge": "规划模式",
     "plan.reviewTitle": "计划已就绪，等待审阅",
     "plan.approve": "批准并实施",
