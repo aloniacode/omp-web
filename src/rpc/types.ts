@@ -2,9 +2,36 @@
  * Wire types mirrored from oh-my-pi's RPC protocol
  * (packages/coding-agent/src/modes/rpc/rpc-types.ts and pi-ai/pi-agent-core).
  *
+ * The bridge<->browser envelope and bridge REST shapes are single-sourced in
+ * the @omp-web/protocol package (shared with server/*.mjs); this module keeps
+ * the agent-message / rendering-domain types plus a tolerant fallback union.
  * Fields the web UI does not consume are omitted; optional typing stays
  * tolerant because older/newer agent runtimes may add fields.
  */
+
+import type {
+  BridgeEventFrame,
+  CommandOutputFrame,
+  NoticeFrame,
+  PromptResultFrame,
+  RpcChunkFrame,
+  RpcReadyFrame,
+  RpcResponseFrame,
+} from "@omp-web/protocol";
+
+export type {
+  BranchListResult,
+  BridgeEventFrame,
+  BridgeHealth,
+  CommandOutputFrame,
+  NoticeFrame,
+  ProjectInfo,
+  PromptResultFrame,
+  RpcChunkFrame,
+  RpcReadyFrame,
+  RpcResponseFrame,
+  SessionMeta,
+} from "@omp-web/protocol";
 
 // ── Content blocks ──────────────────────────────────────────────────────────
 
@@ -241,49 +268,9 @@ export interface RpcHandoffResult {
 }
 
 // ── Frames ──────────────────────────────────────────────────────────────────
-
-export interface RpcReadyFrame {
-  type: "ready";
-  protocolVersion: number;
-  supportedProtocolVersions?: number[];
-  maxFrameBytes?: number;
-  maxReassembledFrameBytes?: number;
-}
-
-export interface RpcChunkFrame {
-  type: "rpc_chunk";
-  chunkId: string;
-  index: number;
-  count: number;
-  byteLength: number;
-  data: string;
-}
-
-export interface RpcResponseFrame<TData = unknown> {
-  id?: string;
-  type: "response";
-  command: string;
-  success: boolean;
-  data?: TData;
-  error?: string;
-  code?: string;
-}
-
-export interface PromptResultFrame {
-  type: "prompt_result";
-  id?: string;
-  agentInvoked: boolean;
-}
-
-export interface CommandOutputFrame {
-  type: "command_output";
-  /** Tolerant: runtimes have used several field names across versions. */
-  output?: string;
-  text?: string;
-  content?: unknown;
-  command?: string;
-  [k: string]: unknown;
-}
+// Envelope frames (ready / rpc_chunk / response / prompt_result /
+// command_output / notice / bridge_event) are single-sourced in
+// @omp-web/protocol and re-exported above.
 
 export interface AvailableCommand {
   name: string;
@@ -326,22 +313,6 @@ export interface ExtensionUiRequest {
   statusKey?: string;
   statusText?: string;
   notifyType?: "info" | "warning" | "error";
-}
-
-export interface BridgeEventFrame {
-  type: "bridge_event";
-  event: "spawn_error" | "agent_exit" | "frame_error" | "bad_frame";
-  error?: string;
-  hint?: string;
-  code?: number | null;
-  signal?: string | null;
-}
-
-export interface NoticeFrame {
-  type: "notice";
-  level: "info" | "warning" | "error";
-  message: string;
-  source?: string;
 }
 
 /**
@@ -438,21 +409,5 @@ export type SessionEventFrame =
   | { type: string; [k: string]: unknown };
 
 // ── Bridge REST ─────────────────────────────────────────────────────────────
-
-export interface SessionMeta {
-  path: string;
-  id: string;
-  cwd: string | null;
-  title: string | null;
-  preview: string;
-  mtimeMs: number;
-  size: number;
-  startedAt: string | null;
-}
-
-/** Known agent working directory, aggregated from session files. */
-export interface ProjectInfo {
-  cwd: string;
-  sessions: number;
-  lastUsedMs: number;
-}
+// SessionMeta / ProjectInfo are single-sourced in @omp-web/protocol
+// (re-exported above); the bridge produces them and the UI consumes them.

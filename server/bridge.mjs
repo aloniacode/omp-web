@@ -23,6 +23,7 @@ import { WebSocketServer } from "ws";
 import { parseSessionPrefix, bucketNamesForCwd } from "./session-meta.mjs";
 import { FrameAssembler } from "./rpc-frame.mjs";
 import { listBranches, checkoutBranch } from "./git-branches.mjs";
+import { NEGOTIATED_MAX_REASSEMBLED_BYTES, PROTOCOL_REQUEST_ID, PROTOCOL_VERSION, hasType } from "@omp-web/protocol";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXTRA_OMP_ARGS = process.env.OMP_ARGS ? process.env.OMP_ARGS.split(" ").filter(Boolean) : [];
@@ -240,14 +241,14 @@ class RpcChild {
   #emit(obj) {
     if (obj.type === "ready") {
       const versions = obj.supportedProtocolVersions ?? [obj.protocolVersion ?? 1];
-      if (versions.includes(2)) {
+      if (versions.includes(PROTOCOL_VERSION)) {
         // Opt into lossless transport before any oversized frame can occur.
-        this.sendDown({ id: "protocol-1", type: "negotiate_protocol", protocolVersion: 2 });
+        this.sendDown({ id: PROTOCOL_REQUEST_ID, type: "negotiate_protocol", protocolVersion: PROTOCOL_VERSION });
       }
     }
-    if (obj.id === "protocol-1" && obj.command === "negotiate_protocol") {
-      if (obj.success && obj.data?.protocolVersion === 2) {
-        this.maxReassembled = Math.min(this.maxReassembled, 512 * 1024 * 1024);
+    if (obj.id === PROTOCOL_REQUEST_ID && obj.command === "negotiate_protocol") {
+      if (obj.success && obj.data?.protocolVersion === PROTOCOL_VERSION) {
+        this.maxReassembled = Math.min(this.maxReassembled, NEGOTIATED_MAX_REASSEMBLED_BYTES);
         this.log("negotiated protocol v2");
       }
     }
@@ -550,7 +551,7 @@ wss.on("connection", (ws) => {
       ws.send(JSON.stringify({ type: "bridge_event", event: "bad_frame", error: "not valid JSON" }));
       return;
     }
-    if (obj && typeof obj === "object" && typeof obj.type === "string") {
+    if (hasType(obj)) {
       child.sendDown(obj);
     } else {
       ws.send(JSON.stringify({ type: "bridge_event", event: "bad_frame", error: "missing type field" }));

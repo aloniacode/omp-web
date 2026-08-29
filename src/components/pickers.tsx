@@ -11,7 +11,7 @@ import {
 
 import { useActions, useAppStore } from "../state/store";
 import { useI18n } from "../i18n";
-import type { ModelInfo } from "../rpc/types";
+import type { BranchListResult, ModelInfo } from "../rpc/types";
 import { THINKING_LEVELS } from "../rpc/types";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Slider } from "./ui/slider";
@@ -165,11 +165,8 @@ function dirName(cwd: string): string {
   return base || trimmed;
 }
 
-interface BranchInfo {
-  repo: boolean;
-  current: string | null;
-  branches: Array<{ name: string; current: boolean }>;
-  /** True when the branch list could not be fetched (transport error). */
+/** Branch list result plus the UI-side transport-failure marker. */
+interface BranchInfo extends BranchListResult {
   failed?: boolean;
 }
 

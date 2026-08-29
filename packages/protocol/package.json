@@ -1,0 +1,13 @@
+{
+  "name": "@omp-web/protocol",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "description": "Shared wire contract for the omp-web bridge and UI: protocol constants, frame guards, and the bridge<->browser type surface.",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.mjs"
+    }
+  }
+}

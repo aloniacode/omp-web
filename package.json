@@ -12,6 +12,7 @@
     "start": "node server/bridge.mjs"
   },
   "dependencies": {
+    "@omp-web/protocol": "workspace:*",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-popover": "^1.1.15",

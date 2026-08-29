@@ -6,6 +6,7 @@ import { buildExecutePrompt, stripPlanContract, wrapPlanPrompt } from "../lib/pl
 import { stripGoalContract } from "../lib/goalMode";
 import { assistantText } from "../lib/format";
 import { notifyTurnEnd } from "../lib/notify";
+import type { BridgeHealth } from "@omp-web/protocol";
 import type {
   AgentEndFrame,
   ImageContent,
@@ -57,11 +58,7 @@ export interface UiNotice {
   source?: string;
 }
 
-export interface BridgeHealth {
-  ok: boolean;
-  ompResolved: string | null;
-  ompCwd: string;
-}
+export type { BridgeHealth } from "@omp-web/protocol";
 
 export interface AppState {
   connStatus: ConnStatus;
