@@ -1,31 +1,30 @@
 /**
- * omp-web bridge.
+ * omp-web bridge — composition root.
  *
  * Owns an `omp --mode rpc` child process per WebSocket connection and bridges
- * newline-delimited JSON-RPC frames (stdio) <-> WebSocket JSON frames.
+ * newline-delimited JSON-RPC frames (stdio) <-> WebSocket JSON frames. All
+ * HTTP concerns (origin guard, /api routes, static dist/) live in
+ * server/http-app.mjs; protocol frame reassembly in server/rpc-frame.mjs.
  *
- * Responsibilities (communication layer only — no agent functionality):
- * - Protocol v2 negotiation + lossless `rpc_chunk` reassembly so browsers
- *   always receive whole JSON frames regardless of the 1 MiB stdout cap.
- * - REST endpoints: /api/health, /api/sessions (list/delete), static dist/.
+ * Responsibilities here (communication layer only — no agent functionality):
+ * - one agent child per WS connection, cwd-scoped per connection
+ * - protocol v2 negotiation so oversized frames survive (chunk reassembly)
+ * - uplink guards (frame size, envelope shape) and bridge_event error frames
+ * - heartbeat, graceful dispose, vite parent watchdog
  *
- * Env: PORT (8787), OMP_BIN ("omp"), OMP_CWD (process.cwd()), OMP_ARGS (extra CLI args).
+ * Env: PORT (8787), HOST (127.0.0.1), OMP_BIN ("omp"), OMP_CWD (process.cwd()),
+ * OMP_ARGS (extra CLI args), OMP_MAX_UPLINK_MB (32).
  */
 import http from "node:http";
-import net from "node:net";
-import fs from "node:fs";
-import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { WebSocketServer } from "ws";
-import { parseSessionPrefix, bucketNamesForCwd } from "./session-meta.mjs";
 import { FrameAssembler } from "./rpc-frame.mjs";
-import { listBranches, checkoutBranch } from "./git-branches.mjs";
-import { writeScratchFile } from "./scratch.mjs";
 import { isAllowedOrigin } from "./origin-guard.mjs";
+import { createHttpApp } from "./http-app.mjs";
 import { NEGOTIATED_MAX_REASSEMBLED_BYTES, PROTOCOL_REQUEST_ID, PROTOCOL_VERSION, hasType } from "@omp-web/protocol";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -45,160 +44,7 @@ const MAX_LINE_BYTES = 128 * 1024 * 1024;
  *  Generous default: image-bearing prompt frames are base64-heavy. */
 const UPLINK_MB = Number(process.env.OMP_MAX_UPLINK_MB ?? 32);
 const MAX_UPLINK_BYTES = (Number.isFinite(UPLINK_MB) && UPLINK_MB > 0 ? UPLINK_MB : 32) * 1024 * 1024;
-
-// ---------------------------------------------------------------------------
-// Session listing (~/.omp/agent/sessions/<encoded-cwd>/<ts>_<id>.jsonl)
-// ---------------------------------------------------------------------------
-
 const SESSIONS_DIR = path.join(os.homedir(), ".omp", "agent", "sessions");
-
-/** Bounded workspace file search for the composer's @-mention popup. */
-const SKIP_DIRS = new Set([
-  "node_modules",
-  ".git",
-  "dist",
-  "build",
-  "out",
-  ".next",
-  ".nuxt",
-  "coverage",
-  "target",
-  ".venv",
-  "venv",
-  "__pycache__",
-  ".idea",
-  ".vscode",
-]);
-
-async function searchFiles(cwd, query, limit = 24) {
-  const results = [];
-  const needle = query.toLowerCase();
-  async function walk(dir, rel, depth) {
-    if (depth > 4 || results.length >= limit) return;
-    let entries;
-    try {
-      entries = await fsp.readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (results.length >= limit) return;
-      if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
-      const relPath = rel ? `${rel}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        await walk(path.join(dir, entry.name), relPath, depth + 1);
-      } else if (!needle || relPath.toLowerCase().includes(needle)) {
-        results.push(relPath);
-      }
-    }
-  }
-  await walk(cwd, "", 0);
-  return results;
-}
-
-/** Skills from the global agent dir plus the project's .omp/skills. */
-async function listSkills(cwd) {
-  const roots = [
-    { dir: path.join(os.homedir(), ".omp", "agent", "skills"), source: "global" },
-    { dir: path.join(cwd, ".omp", "skills"), source: "project" },
-  ];
-  const out = [];
-  for (const { dir, source } of roots) {
-    let entries;
-    try {
-      entries = await fsp.readdir(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const meta = { name: entry.name, description: "", source };
-      try {
-        const raw = await fsp.readFile(path.join(dir, entry.name, "SKILL.md"), "utf8");
-        const frontmatter = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-        if (frontmatter) {
-          const name = frontmatter[1].match(/^name:\s*(.+)$/m);
-          const description = frontmatter[1].match(/^description:\s*(.+)$/m);
-          if (name) meta.name = name[1].trim();
-          if (description) meta.description = description[1].trim().slice(0, 120);
-        }
-      } catch {
-        // SKILL.md missing — keep directory name
-      }
-      out.push(meta);
-    }
-  }
-  return out;
-}
-
-function isBucketForCwd(bucketName) {
-  return bucketNamesForCwd(ompCwd).has(bucketName);
-}
-
-async function listSessions({ limit = 50, scope = "all" } = {}) {
-  let buckets;
-  try {
-    buckets = await fsp.readdir(SESSIONS_DIR, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-
-  const candidates = [];
-  for (const dirent of buckets) {
-    if (!dirent.isDirectory()) continue;
-    if (scope !== "all" && !isBucketForCwd(dirent.name)) continue;
-    let files;
-    try {
-      files = await fsp.readdir(path.join(SESSIONS_DIR, dirent.name));
-    } catch {
-      continue;
-    }
-    for (const file of files) {
-      if (!file.endsWith(".jsonl")) continue;
-      candidates.push(path.join(SESSIONS_DIR, dirent.name, file));
-    }
-  }
-
-  const withStats = await Promise.all(
-    candidates.map(async (p) => {
-      try {
-        return { p, stat: await fsp.stat(p) };
-      } catch {
-        return null;
-      }
-    }),
-  );
-  withStats.sort((a, b) => (b?.stat.mtimeMs ?? 0) - (a?.stat.mtimeMs ?? 0));
-
-  const out = [];
-  for (const { p, stat } of withStats) {
-    if (out.length >= limit) break;
-    if (!stat) continue;
-    try {
-      const handle = await fsp.open(p, "r");
-      try {
-        const { buffer, bytesRead } = await handle.read(Buffer.alloc(4096), 0, 4096, 0);
-        const parsed = parseSessionPrefix(p, buffer.subarray(0, bytesRead), stat);
-        if (parsed) out.push(parsed);
-      } finally {
-        await handle.close();
-      }
-    } catch {
-      // unreadable file — skip
-    }
-  }
-  return out;
-}
-
-async function deleteSessionFile(requestedPath) {
-  const resolved = path.resolve(requestedPath);
-  const resolvedRoot = path.resolve(SESSIONS_DIR);
-  if (!resolved.startsWith(resolvedRoot + path.sep) || !resolved.endsWith(".jsonl")) {
-    throw Object.assign(new Error("path outside sessions directory"), { status: 400 });
-  }
-  await fsp.unlink(resolved);
-  return { deleted: resolved };
-}
 
 // ---------------------------------------------------------------------------
 // RPC child process with protocol v2 chunk reassembly
@@ -209,6 +55,7 @@ class RpcChild {
     this.onFrame = onFrame;
     this.onExit = onExit;
     this.log = log;
+    // v1 default cap; raised on protocol v2 negotiation below.
     this.assembler = new FrameAssembler();
     this.exited = false;
     this.stderrTail = [];
@@ -259,7 +106,7 @@ class RpcChild {
     }
     if (obj.id === PROTOCOL_REQUEST_ID && obj.command === "negotiate_protocol") {
       if (obj.success && obj.data?.protocolVersion === PROTOCOL_VERSION) {
-        this.maxReassembled = Math.min(this.maxReassembled, NEGOTIATED_MAX_REASSEMBLED_BYTES);
+        this.assembler.maxBytes = Math.min(this.assembler.maxBytes, NEGOTIATED_MAX_REASSEMBLED_BYTES);
         this.log("negotiated protocol v2");
       }
     }
@@ -321,229 +168,29 @@ class RpcChild {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP + WS wiring
+// HTTP (origin guard, /api routes, static dist/) — see server/http-app.mjs
 // ---------------------------------------------------------------------------
 
-const MIME = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".ico": "image/x-icon",
-  ".json": "application/json",
-  ".woff2": "font/woff2",
-};
+const wss = new WebSocketServer({ noServer: true });
+const children = new Set();
+/** Active browser connections: id → { cwd, child } for connection-scoped cwd. */
+const connections = new Map();
 
-async function readJsonBody(req) {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const text = Buffer.concat(chunks).toString("utf8");
-  return text ? JSON.parse(text) : {};
-}
+const handleHttp = createHttpApp({
+  ompBin: OMP_BIN,
+  getDefaultCwd: () => ompCwd,
+  setDefaultCwd: (cwd) => {
+    ompCwd = cwd;
+  },
+  connections,
+  children,
+  sessionsDir: SESSIONS_DIR,
+  maxUplinkBytes: MAX_UPLINK_BYTES,
+  distDir: DIST_DIR,
+});
 
-function sendJson(res, status, body) {
-  const payload = JSON.stringify(body);
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
-  res.end(payload);
-}
-
-/**
- * Top-level listing for the project picker's filesystem browser.
- * Windows: available drive letters. POSIX: home + common roots.
- */
-async function fsRoots() {
-  const entries = [];
-  if (process.platform === "win32") {
-    for (let code = 65; code <= 90; code += 1) {
-      const drive = `${String.fromCharCode(code)}:\\`;
-      try {
-        await fsp.access(drive);
-        entries.push({ name: drive, path: drive });
-      } catch {}
-    }
-  } else {
-    for (const dir of [os.homedir(), "/"]) {
-      try {
-        const stat = await fsp.stat(dir);
-        if (stat.isDirectory()) entries.push({ name: dir, path: dir });
-      } catch {}
-    }
-  }
-  return { path: "", parent: null, entries };
-}
-
-function whichOmp() {
-  const exts = process.platform === "win32" ? (process.env.PATHEXT ?? ".exe").split(";") : [""];
-  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-    if (!dir) continue;
-    for (const ext of exts) {
-      const candidate = path.join(dir, OMP_BIN.endsWith(".exe") ? OMP_BIN : OMP_BIN + ext);
-      try {
-        fs.accessSync(candidate, fs.constants.X_OK);
-        return candidate;
-      } catch {}
-    }
-  }
-  return null;
-}
-
-const server = http.createServer(async (req, res) => {
-  // Any web page can send no-preflight requests at localhost; judge Origin
-  // before touching state (read-only GETs would be safe, the rest are not).
-  if (!isAllowedOrigin(req.headers.origin, req.headers.host)) {
-    return sendJson(res, 403, { error: "cross-origin request rejected" });
-  }
-  const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
-  // cwd-scoped endpoints resolve against the calling connection's directory
-  // when the browser announces it (each tab can sit in a different project).
-  const connectionCwd = () => {
-    const id = req.headers["x-omp-web-connection"];
-    if (typeof id === "string" && connections.has(id)) return connections.get(id).cwd;
-    return ompCwd;
-  };
-  try {
-    if (url.pathname === "/api/health") {
-      const found = whichOmp();
-      return sendJson(res, 200, {
-        ok: true,
-        omp: { bin: OMP_BIN, resolved: found, cwd: ompCwd },
-      });
-    }
-    if (url.pathname === "/api/files" && req.method === "GET") {
-      const query = url.searchParams.get("q") ?? "";
-      const limit = Math.min(Number(url.searchParams.get("limit") ?? 24) || 24, 50);
-      return sendJson(res, 200, { files: await searchFiles(connectionCwd(), query, limit) });
-    }
-    if (url.pathname === "/api/skills" && req.method === "GET") {
-      return sendJson(res, 200, { skills: await listSkills(connectionCwd()) });
-    }
-    if (url.pathname === "/api/branches" && req.method === "GET") {
-      return sendJson(res, 200, await listBranches(connectionCwd()));
-    }
-    if (url.pathname === "/api/branches" && req.method === "POST") {
-      const body = await readJsonBody(req);
-      const name = typeof body.name === "string" ? body.name.trim() : "";
-      if (!name) return sendJson(res, 400, { error: "missing branch name" });
-      return sendJson(res, 200, await checkoutBranch(connectionCwd(), name, body.create === true));
-    }
-    if (url.pathname === "/api/scratch" && req.method === "POST") {
-      // Reject oversized uploads before buffering them.
-      const declared = Number(req.headers["content-length"] ?? 0);
-      if (Number.isFinite(declared) && declared > MAX_UPLINK_BYTES + 1024) {
-        return sendJson(res, 413, { error: "scratch content exceeds the uplink cap" });
-      }
-      const body = await readJsonBody(req);
-      if (Buffer.byteLength(String(body.text ?? ""), "utf8") > MAX_UPLINK_BYTES) {
-        return sendJson(res, 413, { error: "scratch content exceeds the uplink cap" });
-      }
-      return sendJson(res, 200, await writeScratchFile(connectionCwd(), body.text));
-    }
-    if (url.pathname === "/api/sessions" && req.method === "GET") {
-      const limit = Math.min(Number(url.searchParams.get("limit") ?? 60) || 60, 200);
-      const scope = url.searchParams.get("scope") === "bucket" ? "bucket" : "all";
-      return sendJson(res, 200, { sessions: await listSessions({ limit, scope }) });
-    }
-    if (url.pathname === "/api/sessions" && req.method === "DELETE") {
-      const target = url.searchParams.get("path") ?? (await readJsonBody(req)).path;
-      if (!target) return sendJson(res, 400, { error: "missing path" });
-      return sendJson(res, 200, await deleteSessionFile(target));
-    }
-    if (url.pathname === "/api/projects" && req.method === "GET") {
-      // Distinct session cwds, plus the calling connection's working directory.
-      const sessions = await listSessions({ limit: 200 });
-      const byCwd = new Map();
-      for (const session of sessions) {
-        if (!session.cwd) continue;
-        const entry = byCwd.get(session.cwd) ?? { cwd: session.cwd, sessions: 0, lastUsedMs: 0 };
-        entry.sessions += 1;
-        entry.lastUsedMs = Math.max(entry.lastUsedMs, session.mtimeMs);
-        byCwd.set(session.cwd, entry);
-      }
-      const connCwd = connectionCwd();
-      const projects = [...byCwd.values()].sort((a, b) => b.lastUsedMs - a.lastUsedMs);
-      if (![...byCwd.keys()].some((cwd) => path.resolve(cwd) === path.resolve(connCwd))) {
-        projects.unshift({ cwd: connCwd, sessions: 0, lastUsedMs: 0 });
-      }
-      return sendJson(res, 200, { projects, current: connCwd });
-    }
-    if (url.pathname === "/api/fs" && req.method === "GET") {
-      const requested = (url.searchParams.get("path") ?? "").trim();
-      if (!requested) return sendJson(res, 200, await fsRoots());
-      const dir = path.resolve(requested);
-      let stat;
-      try {
-        stat = await fsp.stat(dir);
-      } catch {
-        return sendJson(res, 400, { error: `directory not found: ${dir}` });
-      }
-      if (!stat.isDirectory()) return sendJson(res, 400, { error: `not a directory: ${dir}` });
-      const entries = [];
-      for (const entry of await fsp.readdir(dir, { withFileTypes: true })) {
-        if (entry.name.startsWith(".")) continue;
-        if (entry.isDirectory() || entry.isSymbolicLink()) {
-          entries.push({ name: entry.name, path: path.join(dir, entry.name) });
-        }
-      }
-      entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-      const parent = path.dirname(dir);
-      return sendJson(res, 200, {
-        path: dir,
-        parent: parent === dir ? null : parent,
-        entries,
-      });
-    }
-    if (url.pathname === "/api/cwd" && req.method === "POST") {
-      const body = await readJsonBody(req);
-      const cwd = typeof body.cwd === "string" ? path.resolve(body.cwd) : "";
-      if (!cwd) return sendJson(res, 400, { error: "missing cwd" });
-      let stat;
-      try {
-        stat = await fsp.stat(cwd);
-      } catch {
-        return sendJson(res, 400, { error: `directory not found: ${cwd}` });
-      }
-      if (!stat.isDirectory()) return sendJson(res, 400, { error: `not a directory: ${cwd}` });
-      // Remember the latest choice as the default for fresh connections.
-      const globalChanged = path.resolve(ompCwd) !== cwd;
-      ompCwd = cwd;
-      const headerId = req.headers["x-omp-web-connection"];
-      const connection = typeof headerId === "string" ? connections.get(headerId) : undefined;
-      if (connection) {
-        // Connection-scoped switch: only this tab's agent respawns; other
-        // connections keep running in their own directory.
-        const connectionChanged = path.resolve(connection.cwd) !== cwd;
-        connection.cwd = cwd;
-        if (connectionChanged && connection.child) connection.child.dispose(true);
-        console.log(`[bridge] connection ${String(headerId).slice(0, 8)} cwd → ${cwd}`);
-        return sendJson(res, 200, { ok: true, cwd, changed: connectionChanged });
-      }
-      // Legacy callers (no connection id): recycle every agent child.
-      if (!globalChanged) return sendJson(res, 200, { ok: true, cwd, changed: false });
-      for (const child of children) child.dispose(true);
-      console.log(`[bridge] cwd switched to ${ompCwd}`);
-      return sendJson(res, 200, { ok: true, cwd: ompCwd, changed: true });
-    }
-    if (url.pathname.startsWith("/api/")) {
-      return sendJson(res, 404, { error: "unknown endpoint" });
-    }
-
-    // Static dist/ (production mode: `npm run build` then `npm start`).
-    let filePath = path.join(DIST_DIR, url.pathname === "/" ? "index.html" : decodeURIComponent(url.pathname));
-    if (!filePath.startsWith(DIST_DIR)) filePath = path.join(DIST_DIR, "index.html");
-    let data;
-    try {
-      data = await fsp.readFile(filePath);
-    } catch {
-      filePath = path.join(DIST_DIR, "index.html");
-      data = await fsp.readFile(filePath).catch(() => null);
-    }
-    if (!data) return sendJson(res, 404, { error: "not built — run `npm run build`" });
-    res.writeHead(200, { "content-type": MIME[path.extname(filePath)] ?? "application/octet-stream" });
-    res.end(data);
-  } catch (err) {
-    sendJson(res, err.status ?? 500, { error: err.message });
-  }
+const server = http.createServer((req, res) => {
+  void handleHttp(req, res);
 });
 
 server.on("error", (err) => {
@@ -556,11 +203,6 @@ server.on("error", (err) => {
   }
   throw err;
 });
-
-const wss = new WebSocketServer({ noServer: true });
-const children = new Set();
-/** Active browser connections: id → { cwd, child } for connection-scoped cwd. */
-const connections = new Map();
 
 server.on("upgrade", (req, socket, head) => {
   // WebSockets are not subject to CORS: without this check any page could
@@ -652,8 +294,8 @@ wss.on("connection", (ws) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`[bridge] listening on http://${HOST}:${PORT}`);
-  console.log(`[bridge] omp binary: ${whichOmp() ?? `"${OMP_BIN}" (not found on PATH)`}`);
-  console.log(`[bridge] agent cwd:  ${ompCwd}`);
+  console.log(`[bridge] omp binary: ${OMP_BIN} (probed per /api/health)`);
+  console.log(`[bridge] default agent cwd:  ${ompCwd}`);
 });
 
 for (const sig of ["SIGINT", "SIGTERM"]) {

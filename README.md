@@ -57,13 +57,18 @@ browser ──WS /ws──▶ bridge (server/bridge.mjs) ──stdio JSONL──
 ```
 
 - **`server/bridge.mjs`** — Node process owning one `omp --mode rpc` child per WebSocket
-  connection. Negotiates **protocol v2** on the child's `ready` frame, reassembles
-  `rpc_chunk` sequences server-side (strict ordering / interleaving / size validation per
-  `docs/rpc.md`), and forwards clean frames both ways. Also serves the built frontend plus
-  the REST endpoints backing the UI popovers (file search, skills, git branches via
-  `server/git-branches.mjs`, project listing / cwd switch, session list & delete).
-- **`src/rpc/`** — wire types mirrored from `rpc-types.ts` + a reconnecting WebSocket RPC
-  client with id correlation.
+  connection, with a per-connection working directory (tabs can sit in different projects).
+  Negotiates **protocol v2** on the child's `ready` frame, reassembles `rpc_chunk`
+  sequences server-side, guards the uplink (origin checks, frame size cap), and forwards
+  clean frames both ways.
+- **`server/http-app.mjs`** — the HTTP application (origin guard, all `/api` routes,
+  static dist/), testable in isolation via an injected context; service modules beside it:
+  `session-store.mjs` (listing/deletion), `workspace-files.mjs` (@-mention search),
+  `skills.mjs`, `git-branches.mjs`, `scratch.mjs` (oversized-prompt offload),
+  `fs-browse.mjs`, `origin-guard.mjs`, `session-meta.mjs`, `rpc-frame.mjs`.
+- **`src/rpc/`** — wire types single-sourced from the `@omp-web/protocol` workspace
+  package + a reconnecting WebSocket RPC client with id correlation and in-flight
+  idempotency coalescing.
 - **`src/state/store.ts`** — frame router: `message_update` partials → live streaming
   bubble, `tool_execution_*` → tool cards, `goal_updated` → goal banner, terminal
   `agent_end` → transcript reconciliation + stats refresh + optional turn-end notification,

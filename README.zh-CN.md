@@ -50,12 +50,16 @@ browser ──WS /ws──▶ bridge (server/bridge.mjs) ──stdio JSONL──
 ```
 
 - **`server/bridge.mjs`** — Node 进程,为每个 WebSocket 连接持有一个 `omp --mode rpc`
-  子进程。在子进程 `ready` 帧时协商**协议 v2**,在服务端重组 `rpc_chunk` 序列
-  (按 `docs/rpc.md` 做严格顺序 / 交错 / 大小校验),双向转发干净帧。同时托管构建产物
-  与支撑 UI 弹窗的 REST 端点(文件搜索、技能、经 `server/git-branches.mjs` 的 git 分支、
-  项目列表 / cwd 切换、会话列表与删除)。
-- **`src/rpc/`** — 镜像自 `rpc-types.ts` 的线上类型 + 带请求关联的 WebSocket 自动重连
-  客户端。
+  子进程,工作目录按连接隔离(多个标签页可停留在不同项目)。在子进程 `ready` 帧时协商
+  **协议 v2**,在服务端重组 `rpc_chunk` 序列,对上行做守卫(origin 校验、帧大小上限),
+  双向转发干净帧。
+- **`server/http-app.mjs`** — HTTP 应用层(origin 守卫、全部 `/api` 路由、静态 dist/),
+  通过注入上下文可独立测试;旁边的服务模块:`session-store.mjs`(会话列出/删除)、
+  `workspace-files.mjs`(@-mention 搜索)、`skills.mjs`、`git-branches.mjs`、
+  `scratch.mjs`(超长 prompt 落盘)、`fs-browse.mjs`、`origin-guard.mjs`、
+  `session-meta.mjs`、`rpc-frame.mjs`。
+- **`src/rpc/`** — 线上类型单一来源于 `@omp-web/protocol` workspace 包 + 带请求关联与
+  在途幂等合并的 WebSocket 自动重连客户端。
 - **`src/state/store.ts`** — 帧路由:`message_update` 增量 → 流式气泡,`tool_execution_*`
   → 工具卡片,`goal_updated` → 目标横幅,终态 `agent_end` → 转录对账 + 统计刷新 +
   可选的回合结束通知,`extension_ui_request` → 对话框栈。
