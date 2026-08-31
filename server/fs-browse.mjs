@@ -3,56 +3,7 @@
  * (directories/symlinks only) and top-level roots (Windows drives, home).
  */
 import fs from "node:fs";
-import fsp from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-
-export async function fsRoots() {
-  const entries = [];
-  if (process.platform === "win32") {
-    for (let code = 65; code <= 90; code += 1) {
-      const drive = `${String.fromCharCode(code)}:\\`;
-      try {
-        await fsp.access(drive);
-        entries.push({ name: drive, path: drive });
-      } catch {}
-    }
-  } else {
-    for (const dir of [os.homedir(), "/"]) {
-      try {
-        const stat = await fsp.stat(dir);
-        if (stat.isDirectory()) entries.push({ name: dir, path: dir });
-      } catch {}
-    }
-  }
-  return { path: "", parent: null, entries };
-}
-
-/** Listing for one directory; throws a 400-status error when unusable. */
-export async function browseDir(requested) {
-  const dir = path.resolve(requested);
-  let stat;
-  try {
-    stat = await fsp.stat(dir);
-  } catch {
-    throw Object.assign(new Error(`directory not found: ${dir}`), { status: 400 });
-  }
-  if (!stat.isDirectory()) throw Object.assign(new Error(`not a directory: ${dir}`), { status: 400 });
-  const entries = [];
-  for (const entry of await fsp.readdir(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith(".")) continue;
-    if (entry.isDirectory() || entry.isSymbolicLink()) {
-      entries.push({ name: entry.name, path: path.join(dir, entry.name) });
-    }
-  }
-  entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-  const parent = path.dirname(dir);
-  return {
-    path: dir,
-    parent: parent === dir ? null : parent,
-    entries,
-  };
-}
 
 /** Locate an executable on PATH (used to detect the omp binary). */
 export function whichExecutable(bin) {
