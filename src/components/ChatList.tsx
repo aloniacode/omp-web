@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AssistantMessage, ToolResultMessage } from "../rpc/types";
 import { useActions, useAppStore } from "../state/store";
-import type { ChatEntry } from "../state/store";
+import type { ChatEntry, ToolRun } from "../state/store";
 import { setComposerText } from "../state/composerText";
 import { useI18n } from "../i18n";
 import { assistantText } from "../lib/format";
 import { extractPlan } from "../lib/planMode";
-import { MessageView, TurnRow } from "./MessageView";
+import { MessageView, ToolCard, TurnRow } from "./MessageView";
 import { Bot as IconBot, Check as IconCheck, ClipboardList as IconPlan, Copy as IconCopy } from "lucide-react";
 import { ScrollArea } from "./ScrollArea";
 
@@ -39,20 +39,34 @@ function EmptyState() {
   );
 }
 
-function AgentWorkingRow() {
+/**
+ * Optimistic agent reply: appears the instant a prompt is dispatched and
+ * bridges the gap until the agent's first real event. Live tool runs that
+ * started before any assistant text (the common first move) render here so
+ * there is never a window with zero feedback.
+ */
+function AgentWorkingRow({ toolRuns }: { toolRuns: ToolRun[] }) {
   const { t } = useI18n();
   return (
     <div className="flex gap-3">
       <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground shadow-sm">
         <IconBot size={15} />
       </div>
-      <div className="flex min-w-0 flex-1 items-center gap-2 pt-1">
-        <span className="flex gap-1">
-          <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:0ms]" />
-          <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:150ms]" />
-          <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:300ms]" />
-        </span>
-        <span className="text-[12.5px] text-zinc-400 dark:text-zinc-500">{t("chat.agentWorking")}</span>
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="inline-flex items-center gap-2 rounded-2xl rounded-tl-md border border-zinc-200 bg-white px-4 py-2.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <span className="flex gap-1">
+            <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:0ms]" />
+            <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:150ms]" />
+            <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:300ms]" />
+          </span>
+          <span className="text-[12.5px] text-zinc-400 dark:text-zinc-500">{t("chat.agentWorking")}</span>
+        </div>
+        {toolRuns.map((run) => (
+          <ToolCard
+            key={run.toolCallId}
+            tool={{ name: run.toolName, args: run.args, status: run.status, outputText: run.outputText }}
+          />
+        ))}
       </div>
     </div>
   );
@@ -66,9 +80,12 @@ function StreamingRow({ resultsByCallId }: { resultsByCallId: Map<string, ToolRe
 }
 
 function WorkingRow() {
-  const active = useAppStore((s) => s.awaitingAgent && s.streamingMsg === null && s.toolRuns.length === 0);
-  if (!active) return null;
-  return <AgentWorkingRow />;
+  // Waiting agent state alone is enough — tool runs that begin before any
+  // assistant text must stay visible, not blank the row out.
+  const awaiting = useAppStore((s) => s.awaitingAgent && s.streamingMsg === null);
+  const toolRuns = useAppStore((s) => s.toolRuns);
+  if (!awaiting) return null;
+  return <AgentWorkingRow toolRuns={toolRuns} />;
 }
 
 /**

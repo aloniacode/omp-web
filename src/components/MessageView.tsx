@@ -78,7 +78,7 @@ function argsPreview(args: Record<string, unknown> | undefined): string {
   return "";
 }
 
-function ToolCard({ tool }: { tool: ToolView }) {
+export function ToolCard({ tool }: { tool: ToolView }) {
   const argsJson = useMemo(() => JSON.stringify(tool.args ?? {}, null, 2), [tool.args]);
   const preview = argsPreview(tool.args);
   return (

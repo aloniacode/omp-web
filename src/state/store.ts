@@ -598,7 +598,9 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
         void client.request({ type: "get_state" });
       })
       .catch((err: unknown) => {
+        // Rejected prompt: release the optimistic agent row, mark the bubble.
         patchPending(true);
+        set({ awaitingAgent: false });
         fail(err, "prompt");
       });
   };
