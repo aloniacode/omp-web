@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useActions, useAppStore } from "../state/store";
 import type { SessionMeta } from "../rpc/types";
 import { relTime, truncate } from "../lib/format";
@@ -18,6 +18,16 @@ import {
 
 type GroupMode = "date" | "project";
 const GROUP_MODE_KEY = "omp-web.session-group";
+
+// ── Sidebar width (resizable, desktop only) ────────────────────────────────
+/** The stock `w-72` (18rem) is the floor; the ceiling is half the viewport. */
+const SIDEBAR_WIDTH_KEY = "omp-web.sidebar-width";
+const SIDEBAR_MIN_WIDTH = 288;
+
+function readStoredSidebarWidth(): number {
+  const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+  return Number.isFinite(stored) && stored >= SIDEBAR_MIN_WIDTH ? Math.floor(stored) : SIDEBAR_MIN_WIDTH;
+}
 
 interface SessionGroup {
   key: string;
@@ -232,6 +242,42 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   const [renaming, setRenaming] = useState<SessionMeta | null>(null);
   const [deleting, setDeleting] = useState<SessionMeta | null>(null);
 
+  // Resizable width — desktop only; mobile keeps the fixed overlay width.
+  const [width, setWidth] = useState(readStoredSidebarWidth);
+  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia("(min-width: 768px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  const startResize = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = width;
+    let next = startWidth;
+    const onMove = (ev: PointerEvent) => {
+      const max = Math.max(SIDEBAR_MIN_WIDTH, Math.floor(window.innerWidth * 0.5));
+      next = Math.min(Math.max(startWidth + ev.clientX - startX, SIDEBAR_MIN_WIDTH), max);
+      setWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.classList.remove("sidebar-resizing");
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next));
+    };
+    document.body.classList.add("sidebar-resizing");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const resetWidth = () => {
+    setWidth(SIDEBAR_MIN_WIDTH);
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(SIDEBAR_MIN_WIDTH));
+  };
+
   useEffect(() => {
     localStorage.setItem(GROUP_MODE_KEY, groupMode);
   }, [groupMode]);
@@ -298,10 +344,20 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       {/* Mobile scrim */}
       <div className={`fixed inset-0 z-30 bg-black/30 md:hidden ${open ? "" : "hidden"}`} onClick={onClose} />
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 transition-transform duration-200 md:static md:translate-x-0 dark:border-zinc-800 dark:bg-zinc-900 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 transition-transform duration-200 md:relative md:translate-x-0 dark:border-zinc-800 dark:bg-zinc-900 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
+        style={isDesktop ? { width, maxWidth: "50vw", minWidth: SIDEBAR_MIN_WIDTH } : undefined}
       >
+        {/* Resize grip — drag to resize, double-click to reset (desktop only) */}
+        <div
+          aria-hidden
+          onPointerDown={startResize}
+          onDoubleClick={resetWidth}
+          className="group absolute inset-y-0 right-0 z-10 hidden w-1.5 cursor-col-resize md:flex md:items-stretch"
+        >
+          <div className="h-full w-px bg-transparent transition-colors group-hover:bg-accent/50" />
+        </div>
         {/* Header */}
         <div className="flex items-center gap-2 px-4 pb-2 pt-4">
           <div className="flex size-7 items-center justify-center rounded-lg bg-accent text-[13px] font-bold text-accent-foreground shadow-sm">
