@@ -7,3 +7,7 @@ shots/
 .pnpm-cache/
 .tmp-home/
 tsconfig.tsbuildinfo
+
+.claude
+.agent
+.workbuddy
