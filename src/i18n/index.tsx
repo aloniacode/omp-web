@@ -85,6 +85,7 @@ export const messages = {
     "chat.suggestion.1": "Explain this codebase",
     "chat.suggestion.2": "Find and fix failing tests",
     "chat.suggestion.3": "Review uncommitted changes",
+    "nav.title": "Turns",
 
     "composer.attach": "Attach",
     "composer.attachFile": "Attach file",
@@ -311,6 +312,7 @@ export const messages = {
     "chat.suggestion.1": "解释这个代码库",
     "chat.suggestion.2": "查找并修复失败的测试",
     "chat.suggestion.3": "审查未提交的更改",
+    "nav.title": "对话记录",
 
     "composer.attach": "附件",
     "composer.attachFile": "引用文件",

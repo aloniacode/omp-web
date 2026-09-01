@@ -4,11 +4,12 @@ import { useActions, useAppStore } from "../state/store";
 import type { ChatEntry, ToolRun } from "../state/store";
 import { setComposerText } from "../state/composerText";
 import { useI18n } from "../i18n";
-import { assistantText } from "../lib/format";
+import { assistantText, userText } from "../lib/format";
 import { extractPlan } from "../lib/planMode";
 import { MessageView, ToolCard, TurnRow } from "./MessageView";
 import { Bot as IconBot, Check as IconCheck, ClipboardList as IconPlan, Copy as IconCopy } from "lucide-react";
 import { ScrollArea } from "./ScrollArea";
+import { ConversationNav, type TurnNavItem } from "./ConversationNav";
 
 const SUGGESTION_KEYS = ["chat.suggestion.1", "chat.suggestion.2", "chat.suggestion.3"] as const;
 
@@ -150,6 +151,9 @@ export function ChatList() {
   const hasLiveContent = useAppStore((s) => s.streamingMsg !== null || s.toolRuns.length > 0 || s.awaitingAgent);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  /** Turn wrapper elements keyed by turn key — scroll targets for the nav. */
+  const turnEls = useRef(new Map<string, HTMLDivElement>());
+  const [activeTurnKey, setActiveTurnKey] = useState<string | null>(null);
 
   // Pair committed tool results with their calls for card rendering.
   const resultsByCallId = useMemo(() => {
@@ -168,10 +172,44 @@ export function ChatList() {
   // Committed messages arrive async after the path change (loadAllMessages);
   // a layout effect scrolls after the DOM commit, when scrollHeight is real.
   useLayoutEffect(() => {
-    if (!stickToBottom.current) return;
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (stickToBottom.current && el) el.scrollTop = el.scrollHeight;
+    computeActiveTurn();
   }, [messages, hasLiveContent]);
+
+  // Scroll spy: the nav highlights the turn whose top is nearest the viewport
+  // top (a ~100px band below it), defaulting to the first turn at the very top.
+  const computeActiveTurn = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const vpTop = el.getBoundingClientRect().top;
+    let current: string | null = null;
+    let first: string | null = null;
+    let last: string | null = null;
+    for (const [key, node] of turnEls.current) {
+      if (first === null) first = key;
+      last = key;
+      if (node.getBoundingClientRect().top <= vpTop + 100) current = key;
+    }
+    if (current !== null && el.scrollHeight - el.scrollTop - el.clientHeight < 16) {
+      // Pinned to the bottom: a short trailing turn may not have reached the
+      // spy band yet — highlight it so the bottom position is never nowhere.
+      current = last;
+    }
+    setActiveTurnKey(current ?? first);
+  };
+
+  // Nav click: jump to the turn's wrapper, detaching from follow-the-bottom
+  // so streaming doesn't yank the viewport straight back down.
+  const onNavigate = (key: string) => {
+    stickToBottom.current = false;
+    const el = scrollRef.current;
+    const node = turnEls.current.get(key);
+    if (!el || !node) return;
+    const rect = node.getBoundingClientRect();
+    const vpRect = el.getBoundingClientRect();
+    el.scrollTo({ top: rect.top - vpRect.top + el.scrollTop - 16, behavior: "smooth" });
+  };
 
   // Follow-the-bottom scroll driven by a store subscription: streaming tokens
   // update the DOM without re-rendering the whole committed message list.
@@ -196,6 +234,7 @@ export function ChatList() {
     const el = scrollRef.current;
     if (!el) return;
     stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+    computeActiveTurn();
   };
 
   const hasContent = messages.length > 0 || hasLiveContent;
@@ -236,21 +275,50 @@ export function ChatList() {
     return groups;
   }, [messages]);
 
-  return (
-    <ScrollArea className="min-h-0 flex-1" viewportClassName="px-4 py-5 sm:px-6" onScroll={onScroll} viewportRef={scrollRef}>
-      {!hasContent ? (
-        <EmptyState />
-      ) : (
-        <div className="mx-auto flex max-w-3xl flex-col gap-5">
-          {turns.map((turn) => (
-            <TurnRow key={turn.key} user={turn.user} assistants={turn.assistants} resultsByCallId={resultsByCallId} />
-          ))}
+  // Nav outline: one node per turn opened by a user message; the title is the
+  // user's own text, whitespace-collapsed and truncated in the node itself.
+  const navItems = useMemo<TurnNavItem[]>(() => {
+    const items: TurnNavItem[] = [];
+    for (const turn of turns) {
+      if (!turn.user) continue;
+      const label = userText(turn.user.content).replace(/\s+/g, " ").trim();
+      if (!label) continue;
+      items.push({ key: turn.key, label });
+    }
+    return items;
+  }, [turns]);
 
-          <StreamingRow resultsByCallId={resultsByCallId} />
-          <WorkingRow />
-          {planCandidate && <PlanReviewBar plan={planCandidate} />}
-        </div>
-      )}
-    </ScrollArea>
+  return (
+    <div className="relative min-h-0 flex-1">
+      <ScrollArea className="h-full" viewportClassName="px-4 py-5 sm:px-6" onScroll={onScroll} viewportRef={scrollRef}>
+        {!hasContent ? (
+          <EmptyState />
+        ) : (
+          <div className="mx-auto flex max-w-3xl flex-col gap-5">
+            {turns.map((turn) => (
+              <div
+                key={turn.key}
+                ref={
+                  turn.user
+                    ? (node) => {
+                        if (node) turnEls.current.set(turn.key, node);
+                        else turnEls.current.delete(turn.key);
+                      }
+                    : undefined
+                }
+                className="flex flex-col gap-5"
+              >
+                <TurnRow user={turn.user} assistants={turn.assistants} resultsByCallId={resultsByCallId} />
+              </div>
+            ))}
+
+            <StreamingRow resultsByCallId={resultsByCallId} />
+            <WorkingRow />
+            {planCandidate && <PlanReviewBar plan={planCandidate} />}
+          </div>
+        )}
+      </ScrollArea>
+      <ConversationNav items={navItems} activeKey={activeTurnKey} onNavigate={onNavigate} />
+    </div>
   );
 }
