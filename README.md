@@ -12,6 +12,9 @@ your local `omp` binary; nothing is reimplemented here.
 
 - **Sidebar + conversation layout** — session list (parsed from `~/.omp/agent/sessions`),
   search, new chat, rename, delete, connection status.
+- **Windowed history** — long sessions render the most recent turns only; scrolling toward
+  the top (or the expander button) loads earlier turns with scroll anchoring, so opening a
+  huge transcript stays fast.
 - **Live streaming turns** — text/thinking deltas, tool-call cards with live status, abort,
   follow-up queueing while streaming (`prompt` with `streamingBehavior: "followUp"`).
 - **Token consumption display** — per-message `↑input ↓output · cache · $cost · tok/s · model`

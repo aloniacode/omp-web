@@ -259,10 +259,11 @@ function AssistantBlock({
     case "image": {
       const image = block as ImageContent;
       return (
+        // Data URLs decode locally — eager keeps heights stable right after
+        // history expansion (no late image growth above the viewport).
         <img
           src={`data:${image.mimeType};base64,${image.data}`}
           alt="attachment"
-          loading="lazy"
           decoding="async"
           className="max-h-72 rounded-xl border border-zinc-200 dark:border-zinc-800"
         />

@@ -7,10 +7,30 @@ import { useI18n } from "../i18n";
 import { assistantText } from "../lib/format";
 import { extractPlan } from "../lib/planMode";
 import { MessageView, TurnRow } from "./MessageView";
-import { Bot as IconBot, Check as IconCheck, ClipboardList as IconPlan, Copy as IconCopy } from "lucide-react";
+import {
+  Bot as IconBot,
+  Check as IconCheck,
+  ChevronUp as IconChevronUp,
+  ClipboardList as IconPlan,
+  Copy as IconCopy,
+} from "lucide-react";
 import { ScrollArea } from "./ScrollArea";
 
 const SUGGESTION_KEYS = ["chat.suggestion.1", "chat.suggestion.2", "chat.suggestion.3"] as const;
+
+/** Windowed history: render the tail of the turn list, grow on demand. */
+const INITIAL_VISIBLE_TURNS = 40;
+const TURN_WINDOW_STEP = 40;
+
+/** How close to the top (px) auto-expands the history window. */
+const EXPAND_SCROLL_THRESHOLD = 80;
+
+interface Turn {
+  /** Stable key: index of the turn's opening message in the full array. */
+  key: string;
+  user: ChatEntry | null;
+  assistants: AssistantMessage[];
+}
 
 function EmptyState() {
   const { t } = useI18n();
@@ -126,6 +146,7 @@ function PlanReviewBar({ plan }: { plan: string }) {
 }
 
 export function ChatList() {
+  const { t } = useI18n();
   const messages = useAppStore((s) => s.messages);
   const activePath = useAppStore((s) => s.activePath);
   const planMode = useAppStore((s) => s.planMode);
@@ -175,14 +196,6 @@ export function ChatList() {
     });
   }, []);
 
-  const onScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
-  };
-
-  const hasContent = messages.length > 0 || hasLiveContent;
-
   // Plan review candidate: the `plan` block in the trailing assistant turn.
   // Scans backwards across the turn's assistant messages (a turn may hold
   // several); only turns begun after plan mode was enabled are considered.
@@ -204,14 +217,22 @@ export function ChatList() {
 
   // Group committed messages into turns: a user message opens a turn, and all
   // following assistant messages (thinking / tool calls / partial answers)
-  // fold into one summary row once the turn is history.
+  // fold into one summary row once the turn is history. Keys derive from the
+  // opening message's index in the full array so a widened window never
+  // remounts rendered turns.
   const turns = useMemo(() => {
-    const groups: { key: string; user: ChatEntry | null; assistants: AssistantMessage[] }[] = [];
-    for (const entry of messages) {
+    const groups: Turn[] = [];
+    let openIndex = 0;
+    for (let index = 0; index < messages.length; index += 1) {
+      const entry = messages[index];
       if (entry.role === "user") {
-        groups.push({ key: `u${groups.length}`, user: entry, assistants: [] });
+        openIndex = index;
+        groups.push({ key: `m${openIndex}`, user: entry, assistants: [] });
       } else if (entry.role === "assistant") {
-        if (groups.length === 0) groups.push({ key: `u${groups.length}`, user: null, assistants: [] });
+        if (groups.length === 0) {
+          openIndex = index;
+          groups.push({ key: `m${openIndex}`, user: null, assistants: [] });
+        }
         groups[groups.length - 1].assistants.push(entry);
       }
       // toolResult rows render inside assistant tool cards (resultsByCallId).
@@ -219,13 +240,76 @@ export function ChatList() {
     return groups;
   }, [messages]);
 
+  // ── History windowing ────────────────────────────────────────────────────
+  // Long sessions keep every message in memory but render only the most
+  // recent turns; scrolling toward the top (or the explicit button) grows the
+  // window by a step, with scroll anchoring so the viewport doesn't jump.
+  const [visibleTurns, setVisibleTurns] = useState(INITIAL_VISIBLE_TURNS);
+  const anchorRef = useRef<number | null>(null);
+
+  // Render-time reset: switching sessions rewinds the window in the same
+  // commit that swaps the transcript (a post-paint effect could let one frame
+  // render the new session with the previous one's expanded window).
+  const [prevPath, setPrevPath] = useState(activePath);
+  if (prevPath !== activePath) {
+    setPrevPath(activePath);
+    setVisibleTurns(INITIAL_VISIBLE_TURNS);
+  }
+
+  const hiddenTurns = Math.max(0, turns.length - visibleTurns);
+  const windowStart = hiddenTurns;
+  // The expander speaks in messages, not turns (multi-message turns would
+  // understate a turn count).
+  const hiddenMessages = turns
+    .slice(0, hiddenTurns)
+    .reduce((count, turn) => count + (turn.user ? 1 : 0) + turn.assistants.length, 0);
+
+  const expandWindow = () => {
+    if (hiddenTurns === 0) return;
+    anchorRef.current = scrollRef.current?.scrollHeight ?? null;
+    setVisibleTurns((value) => value + TURN_WINDOW_STEP);
+  };
+
+  // Anchor compensation runs before paint: prepended turns increased
+  // scrollHeight; shift scrollTop by the same delta to hold the viewport.
+  // Skipped when pinned to the bottom — there the pin effect owns scrolling.
+  useLayoutEffect(() => {
+    if (stickToBottom.current) return;
+    const anchor = anchorRef.current;
+    anchorRef.current = null;
+    const el = scrollRef.current;
+    if (anchor === null || !el) return;
+    el.scrollTop += el.scrollHeight - anchor;
+  }, [visibleTurns]);
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+    if (el.scrollTop < EXPAND_SCROLL_THRESHOLD) expandWindow();
+  };
+
+  const hasContent = messages.length > 0 || hasLiveContent;
+
+  const renderedTurns = turns.slice(windowStart);
+
   return (
     <ScrollArea className="min-h-0 flex-1" viewportClassName="px-4 py-5 sm:px-6" onScroll={onScroll} viewportRef={scrollRef}>
       {!hasContent ? (
         <EmptyState />
       ) : (
         <div className="mx-auto flex max-w-3xl flex-col gap-5">
-          {turns.map((turn) => (
+          {hiddenMessages > 0 && (
+            <button
+              type="button"
+              onClick={expandWindow}
+              className="mx-auto flex cursor-pointer items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-[12px] text-zinc-500 shadow-sm transition-colors hover:border-accent hover:text-accent dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-accent dark:hover:text-accent"
+            >
+              <IconChevronUp size={13} />
+              {t("chat.earlier", { n: hiddenMessages })}
+            </button>
+          )}
+          {renderedTurns.map((turn) => (
             <TurnRow key={turn.key} user={turn.user} assistants={turn.assistants} resultsByCallId={resultsByCallId} />
           ))}
 
