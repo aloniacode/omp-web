@@ -138,6 +138,9 @@ export const messages = {
     "time.daysAgo": "{d}d ago",
     "message.sending": "sending…",
     "message.failed": "failed",
+    "message.retry": "Retry",
+
+    "common.copy": "Copy",
     "message.usageTooltip": "{input} input · {output} output",
     "message.cacheTooltip": "{read} cache read · {write} cache write",
     "status.ompTooltip": "omp binary not found on PATH",
@@ -454,6 +457,9 @@ export const messages = {
     "setup.subtitle": "本机未找到 oh-my-pi",
     "message.sending": "发送中…",
     "message.failed": "失败",
+    "message.retry": "重试",
+
+    "common.copy": "复制",
     "status.ompTooltip": "PATH 中未找到 omp 可执行文件",
     "picker.noModels": "没有可用模型",
     "picker.loadingModels": "模型目录加载中…",

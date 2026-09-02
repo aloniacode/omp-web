@@ -17,6 +17,10 @@ your local `omp` binary; nothing is reimplemented here.
   huge transcript stays fast.
 - **Live streaming turns** — text/thinking deltas, tool-call cards with live status, abort,
   follow-up queueing while streaming (`prompt` with `streamingBehavior: "followUp"`).
+- **Copy & retry** — one-click copy on assistant conclusions, code blocks and tool output;
+  a failed send gets an inline retry that re-dispatches its content.
+- **Crash diagnostics** — when the agent child dies, the bridge forwards its last stderr
+  lines with the exit event and the UI shows them in the reconnect notice.
 - **Token consumption display** — per-message `↑input ↓output · cache · $cost · tok/s · model`
   chips, conversation totals and cost in the top bar, and a context-window usage meter
   (from `get_session_stats` / `get_state.contextUsage`).

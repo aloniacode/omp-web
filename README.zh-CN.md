@@ -15,6 +15,10 @@
   回合并做滚动锚定,打开超大转录依然流畅。
 - **实时流式回合** — 文本/思考增量、带实时状态的工具调用卡片、中止、流式期间排队追问
   (`prompt` + `streamingBehavior: "followUp"`)。
+- **复制与重试** — 助手结论、代码块、工具输出一键复制;发送失败的消息内联重试,
+  原样重新派发。
+- **崩溃诊断** — agent 子进程退出时,bridge 将其最后若干行 stderr 随退出事件转发,
+  UI 在重连通知中展示。
 - **Token 消耗展示** — 单条消息的 `↑input ↓output · cache · $cost · tok/s · model` 标签,
   顶栏的会话总量与费用,以及上下文窗口用量环
   (来自 `get_session_stats` / `get_state.contextUsage`)。

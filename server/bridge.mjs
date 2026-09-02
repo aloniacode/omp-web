@@ -82,11 +82,18 @@ class RpcChild {
     this.buffer = Buffer.alloc(0);
     this.child.stdout.on("data", (chunk) => this.#consumeStdout(chunk));
     this.child.stderr.on("data", (chunk) => {
-      this.stderrTail.push(chunk.toString("utf8"));
+      // Raw stream chunks, not lines — a line may straddle two chunks. Capped
+      // per chunk so a pathological writer can't balloon the exit frame.
+      const text = chunk.toString("utf8");
+      this.stderrTail.push(text.length > 4000 ? text.slice(-4000) : text);
       if (this.stderrTail.length > 200) this.stderrTail.shift();
     });
     this.child.once("exit", (code, signal) => {
       this.exited = true;
+      // Console copy of the last stderr chunks: the UI toast is ephemeral,
+      // the bridge log is where crash diagnostics survive.
+      const tail = this.stderrTail.filter((line) => line.trim()).slice(-8);
+      if (tail.length) this.log(`agent stderr (last chunks):\n${tail.join("").trimEnd()}`);
       this.onExit(code, signal);
     });
     this.child.once("error", (err) => {
@@ -260,7 +267,17 @@ wss.on("connection", (ws) => {
     (code, signal) => {
       if (closed) return;
       try {
-        ws.send(JSON.stringify({ type: "bridge_event", event: "agent_exit", code, signal }));
+        ws.send(
+          JSON.stringify({
+            type: "bridge_event",
+            event: "agent_exit",
+            code,
+            signal,
+            // Crash diagnostics: the agent's last stderr lines, surfaced in
+            // the UI notice (a dead child's silence is otherwise undebuggable).
+            stderrTail: child.stderrTail.slice(-8),
+          }),
+        );
       } catch {}
       ws.close(1011, "agent exited");
     },

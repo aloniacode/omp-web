@@ -72,6 +72,19 @@ export function assistantText(content: AssistantMessage["content"] | undefined |
     .join("\n");
 }
 
+/**
+ * Crash-diagnostic suffix for the agent_exit notice: the child's last
+ * non-empty stderr chunks, each truncated, newline-prefixed when present.
+ * Tolerant of anything the wire delivers.
+ */
+export function stderrTailSummary(stderrTail: unknown, maxChunks = 4, maxChars = 200): string {
+  const lines = (Array.isArray(stderrTail) ? stderrTail : [])
+    .filter((line): line is string => typeof line === "string" && line.trim().length > 0)
+    .slice(-maxChunks)
+    .map((line) => (line.length > maxChars ? `${line.slice(0, maxChars)}…` : line));
+  return lines.length ? `\n${lines.join("\n")}` : "";
+}
+
 export function toolArgsSummary(args: Record<string, unknown> | undefined, max = 80): string {
   if (!args) return "";
   const preferred = ["command", "path", "file", "file_path", "pattern", "query", "url", "name", "intent", "objective"];

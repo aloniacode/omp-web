@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { highlightCode } from "../lib/highlighter";
 import { useTheme } from "../lib/theme";
+import { CopyButton } from "./CopyButton";
 
 /** Extract the raw text + language from a markdown <code> child of <pre>. */
 function codeInfo(children: ReactNode): { code: string; lang: string } {
@@ -34,13 +35,20 @@ function CodeBlock({ children }: { children: ReactNode }) {
     };
   }, [code, lang, resolved]);
 
-  if (html) {
-    return <div className="shiki-block" dangerouslySetInnerHTML={{ __html: html }} />;
-  }
   return (
-    <pre>
-      <code className={lang ? `language-${lang}` : undefined}>{code}</code>
-    </pre>
+    <div className="group relative">
+      {html ? (
+        <div className="shiki-block" dangerouslySetInnerHTML={{ __html: html }} />
+      ) : (
+        <pre>
+          <code className={lang ? `language-${lang}` : undefined}>{code}</code>
+        </pre>
+      )}
+      <CopyButton
+        text={code}
+        className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
+      />
+    </div>
   );
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmtCost, fmtPercent, fmtTokPerSec, fmtTokens, toolArgsSummary, truncate, userText } from "../src/lib/format";
+import { fmtCost, fmtPercent, fmtTokPerSec, fmtTokens, stderrTailSummary, toolArgsSummary, truncate, userText } from "../src/lib/format";
 
 describe("fmtTokens", () => {
   it("formats small numbers raw", () => {
@@ -89,5 +89,21 @@ describe("toolArgsSummary", () => {
   it("returns empty for empty args", () => {
     expect(toolArgsSummary({})).toBe("");
     expect(toolArgsSummary(undefined)).toBe("");
+  });
+});
+describe("stderrTailSummary", () => {
+  it("suffixes the last non-empty chunks with a leading newline", () => {
+    expect(stderrTailSummary(["noise", "", "Error: boom", "  at x"])).toBe("\nnoise\nError: boom\n  at x");
+  });
+
+  it("tolerates junk, caps count and per-chunk length", () => {
+    const long = "a".repeat(300);
+    expect(stderrTailSummary(undefined)).toBe("");
+    expect(stderrTailSummary([42, null, long])).toBe(`\n${"a".repeat(200)}…`);
+    expect(stderrTailSummary(["1", "2", "3", "4", "5"])).toBe("\n2\n3\n4\n5");
+  });
+
+  it("returns empty for whitespace-only chunks", () => {
+    expect(stderrTailSummary(["  ", "\n"])).toBe("");
   });
 });

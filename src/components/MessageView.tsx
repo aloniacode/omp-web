@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Bot as IconBot, Check as IconCheck, ChevronRight } from "lucide-react";
+import {
+  Bot as IconBot,
+  Check as IconCheck,
+  ChevronRight,
+  RotateCcw as IconRotateCcw,
+} from "lucide-react";
 import type {
   AssistantMessage,
   ImageContent,
@@ -10,10 +15,11 @@ import type {
   ToolResultMessage,
 } from "../rpc/types";
 import type { ChatEntry } from "../state/store";
-import { fmtCost, fmtTokPerSec, fmtTokens, truncate, userText } from "../lib/format";
+import { assistantText, fmtCost, fmtTokPerSec, fmtTokens, truncate, userText } from "../lib/format";
 import { useI18n } from "../i18n";
 import { Markdown } from "./Markdown";
-import { useAppStore } from "../state/store";
+import { CopyButton } from "./CopyButton";
+import { useActions, useAppStore } from "../state/store";
 import { Collapsible as CollapsibleRoot, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
 
 // ── Collapsible shell ───────────────────────────────────────────────────────
@@ -105,9 +111,15 @@ function ToolCard({ tool }: { tool: ToolView }) {
           </pre>
         )}
         {tool.outputText && (
-          <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-100 p-2.5 font-mono text-[11.5px] leading-relaxed text-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-200">
-            {truncate(tool.outputText, 20_000)}
-          </pre>
+          <div className="group relative">
+            <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-100 p-2.5 font-mono text-[11.5px] leading-relaxed text-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-200">
+              {truncate(tool.outputText, 20_000)}
+            </pre>
+            <CopyButton
+              text={() => tool.outputText}
+              className="absolute right-1.5 top-1.5 opacity-0 transition-opacity group-hover:opacity-100"
+            />
+          </div>
         )}
       </div>
     </Collapsible>
@@ -285,6 +297,7 @@ export interface ChatEntryUser {
 
 export function UserRow({ entry }: { entry: ChatEntryUser }) {
   const { t } = useI18n();
+  const actions = useActions();
   return (
     <div className="flex justify-end">
       <div
@@ -297,7 +310,17 @@ export function UserRow({ entry }: { entry: ChatEntryUser }) {
           <p className="mt-1 text-right text-[10.5px] uppercase tracking-wide text-white/70">{t("message.sending")}</p>
         )}
         {entry.failed && (
-          <p className="mt-1 text-right text-[10.5px] uppercase tracking-wide text-red-200">{t("message.failed")}</p>
+          <div className="mt-1 flex items-center justify-end gap-2">
+            <span className="text-[10.5px] uppercase tracking-wide text-red-200">{t("message.failed")}</span>
+            <button
+              type="button"
+              onClick={() => actions.retryPrompt(entry as ChatEntry)}
+              className="flex cursor-pointer items-center gap-1 rounded-md bg-white/15 px-1.5 py-0.5 text-[10.5px] font-medium text-white transition-colors hover:bg-white/25"
+            >
+              <IconRotateCcw size={10} />
+              {t("message.retry")}
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -432,10 +455,19 @@ export function TurnRow({
                 </div>
               </Collapsible>
             )}
-            {conclusion &&
-              conclusion.content
-                .filter((block) => !isProcessBlock(block))
-                .map((block, index) => <AssistantBlock key={index} block={block} streaming={false} resultsByCallId={resultsByCallId} />)}
+            {conclusion && (
+              <div className="group/conclusion relative space-y-2">
+                {conclusion.content
+                  .filter((block) => !isProcessBlock(block))
+                  .map((block, index) => <AssistantBlock key={index} block={block} streaming={false} resultsByCallId={resultsByCallId} />)}
+                {assistantText(conclusion.content) && (
+                  <CopyButton
+                    text={() => assistantText(conclusion.content)}
+                    className="absolute -top-1 right-0 opacity-0 transition-opacity group-hover/conclusion:opacity-100"
+                  />
+                )}
+              </div>
+            )}
             {conclusion && <UsageChips message={conclusion} />}
             {lastError && (
               <p className="rounded-lg border border-red-300/60 bg-red-50 px-3 py-2 text-[12.5px] text-red-600 dark:border-red-500/40 dark:bg-red-950/30 dark:text-red-300">

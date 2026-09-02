@@ -66,6 +66,8 @@ export interface BridgeEventFrame {
   hint?: string;
   code?: number | null;
   signal?: string | null;
+  /** agent_exit only: the child's last stderr chunks, for crash diagnostics. */
+  stderrTail?: string[];
 }
 
 // ── Bridge REST shapes (server/bridge.mjs -> UI fetches) ────────────────────

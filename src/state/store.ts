@@ -6,7 +6,7 @@ import { storeT } from "../i18n";
 import { consumeUrlToken, getStoredToken, storeToken } from "../lib/auth";
 import { buildExecutePrompt, stripPlanContract, wrapPlanPrompt } from "../lib/planMode";
 import { stripGoalContract } from "../lib/goalMode";
-import { assistantText } from "../lib/format";
+import { assistantText, stderrTailSummary, userText } from "../lib/format";
 import { notifyTurnEnd } from "../lib/notify";
 import type { BridgeHealth } from "@omp-web/protocol";
 import { isDuplicatePendingMessage } from "../lib/idempotency";
@@ -51,6 +51,8 @@ import { normalizeTodoPhases } from "../lib/todos";
 export interface OptimisticUserMessage extends UserMessage {
   pending?: boolean;
   failed?: boolean;
+  /** Exact stdin prompt sent for this bubble — reused verbatim by retry. */
+  wire?: string;
 }
 
 export type ChatEntry = AgentMessage | OptimisticUserMessage;
@@ -119,6 +121,8 @@ export interface AppState {
 
 export interface StoreActions {
   sendPrompt(text: string, images?: ImageContent[]): void;
+  /** Drop a failed (local-only) bubble and re-dispatch its content. */
+  retryPrompt(entry: ChatEntry): void;
   stop(): void;
   newChat(): void;
   openSession(path: string): void;
@@ -567,9 +571,20 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       }
 
       case "bridge_event": {
-        const event = frame as { event?: string; error?: string; hint?: string; code?: number | null };
+        const event = frame as {
+          event?: string;
+          error?: string;
+          hint?: string;
+          code?: number | null;
+          stderrTail?: unknown;
+        };
         if (event.event === "agent_exit") {
-          addNotice("warning", `Agent process exited (${event.code ?? "?"}). Reconnecting…`);
+          // Surface the child's last stderr chunks: a crash's actual cause is
+          // only ever visible there.
+          addNotice(
+            "warning",
+            `Agent process exited (${event.code ?? "?"}). Reconnecting…${stderrTailSummary(event.stderrTail)}`,
+          );
         } else if (event.event === "spawn_error") {
           addNotice("error", `${event.error ?? "spawn failed"}${event.hint ? ` — ${event.hint}` : ""}`);
         } else if (event.event === "frame_error" || event.event === "bad_frame") {
@@ -672,6 +687,10 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
           content: hasImages ? [{ type: "text", text: bubble }, ...(images ?? [])] : bubble,
           timestamp: Date.now(),
           pending: true,
+          // Remembered verbatim so a retry re-dispatches byte-identical
+          // content (plan/goal/oversize wrapping and all) instead of
+          // re-deriving it from the displayed bubble.
+          wire,
         },
       ],
       awaitingAgent: true,
@@ -695,6 +714,19 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
   };
 
   const actions: StoreActions = {
+    retryPrompt(entry: ChatEntry) {
+      // The failed bubble is local-only (the agent never committed it): drop
+      // it and re-dispatch its original wire content verbatim — no re-running
+      // of the plan/oversize wrapping, which may have changed since.
+      if (entry.role !== "user" || !("failed" in entry) || !entry.failed) return;
+      set((state) => ({ messages: state.messages.filter((message) => message !== entry) }));
+      const images = Array.isArray(entry.content)
+        ? entry.content.filter((block): block is ImageContent => block.type === "image")
+        : [];
+      const wire = "wire" in entry && typeof entry.wire === "string" ? entry.wire : userText(entry.content);
+      dispatchPrompt(userText(entry.content), wire, images.length > 0 ? images : undefined);
+    },
+
     sendPrompt(text: string, images?: ImageContent[]) {
       const trimmed = text.trim();
       if (!trimmed && (!images || images.length === 0)) return;

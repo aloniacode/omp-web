@@ -200,7 +200,7 @@ function ToastItem({
 
   return (
     <div
-      className={`pointer-events-auto cursor-pointer rounded-xl border px-3.5 py-2.5 text-[12.5px] leading-snug shadow-lg ${tone}`}
+      className={`pointer-events-auto cursor-pointer whitespace-pre-line rounded-xl border px-3.5 py-2.5 text-[12.5px] leading-snug shadow-lg ${tone}`}
       onClick={onDismiss}
       role="status"
     >
