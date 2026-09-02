@@ -74,7 +74,8 @@ function ompBridge(): Plugin {
     server.httpServer?.on("upgrade", (req, socket, head) => {
       if (!req.url?.split("?")[0].startsWith("/ws")) return;
       wss.handleUpgrade(req, socket, head, (client) => {
-        const upstream = new WebSocket(`ws://127.0.0.1:${BRIDGE}/ws`);
+        // req.url already carries the path and any ?token= auth query.
+        const upstream = new WebSocket(`ws://127.0.0.1:${BRIDGE}${req.url}`);
         const pending: Array<Parameters<WebSocket["send"]>[0]> = [];
         client.on("error", quiet);
         upstream.on("error", quiet);
@@ -108,9 +109,10 @@ function ompBridge(): Plugin {
     configureServer(server) {
       relayWs(server);
       // Reuse an already-running bridge instead of fighting for the port.
+      // 401 counts as "alive": auth is on, but the bridge is up.
       fetch(`${BRIDGE_HOST}/api/health`)
         .then((res) => {
-          if (res.ok) console.log(`[vite] reusing bridge on :${BRIDGE}`);
+          if (res.ok || res.status === 401) console.log(`[vite] reusing bridge on :${BRIDGE}`);
           else spawnBridge();
         })
         .catch(spawnBridge);

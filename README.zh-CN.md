@@ -41,6 +41,9 @@
   `set_thinking_level`;压缩按钮(`compact`)。
 - **扩展 UI 透传** — `select` / `confirm` / `input` / `editor` / `open_url` 请求渲染为
   对话框,并通过 `extension_ui_response` 应答。
+- **访问令牌** — bridge 的 `/api` 与 WebSocket 要求访问令牌:首次启动自动生成
+  (持久化于 `~/.omp/web-bridge-token`,控制台打印带 `?token=` 的现成链接),可用
+  `OMP_WEB_TOKEN` 固定或关闭;页面从 `?token=` 或应用内令牌门自行解锁。
 
 ## 架构
 
@@ -81,13 +84,17 @@ pnpm build
 pnpm start        # http://127.0.0.1:8787
 ```
 
-要求 `omp` 在 `PATH` 中(可用 `OMP_BIN` 覆盖,另有 `OMP_CWD`、`OMP_ARGS`、`PORT`、`HOST`)。
+要求 `omp` 在 `PATH` 中(可用 `OMP_BIN` 覆盖,另有 `OMP_CWD`、`OMP_ARGS`、`PORT`、`HOST`,
+以及用于固定/关闭访问令牌的 `OMP_WEB_TOKEN`)。
 分支选择器还要求 bridge 的 PATH 中有 `git`。超长 prompt 会写入 `<project>/.omp/scratch/`
 并以文件引用发送 —— 若该项目本身是 git 仓库,建议把该目录加入 `.gitignore`。
-bridge 绑定 `127.0.0.1` 且**无鉴权** ——
-它能驱动你的智能体并在 agent 目录中执行 git,请仅在本地使用。
-来自非环回地址的跨源请求(含 WebSocket 升级)会被拒绝,因此 omp-web 运行期间浏览
-其他网页无法驱动 bridge(DNS 重绑定是文档中注明的例外,见 `server/origin-guard.mjs`)。
+
+bridge 绑定 `127.0.0.1` 且要求**访问令牌**:首次启动生成随机令牌(持久化于
+`~/.omp/web-bridge-token`,控制台打印现成的 `http://127.0.0.1:8787/?token=…` 链接)。
+页面会一次性消费 `?token=` 并存入 localStorage;无有效令牌的 `/api` 请求与 WebSocket
+升级一律 401。设 `OMP_WEB_TOKEN=<token>` 固定令牌,设 `OMP_WEB_TOKEN=off` 彻底关闭鉴权。
+来自非环回地址的跨源请求会被拒绝,因此 omp-web 运行期间浏览其他网页无法驱动 bridge
+(DNS 重绑定是文档中注明的例外,见 `server/origin-guard.mjs`)。
 
 ```sh
 pnpm vitest run                            # 单元测试(纯函数 + 服务端模块)

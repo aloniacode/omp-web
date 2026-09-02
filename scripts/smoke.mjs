@@ -7,7 +7,8 @@
  * (optional) streamed prompt turn ending in terminal agent_end with usage.
  */
 import WebSocket from "ws";
-const WS_URL = process.env.WS_URL ?? "ws://127.0.0.1:8787/ws";
+import { withToken } from "./bridge-token.mjs";
+const WS_URL = withToken(process.env.WS_URL ?? "ws://127.0.0.1:8787/ws");
 
 const ws = new WebSocket(WS_URL);
 const PROMPT = process.argv.includes("--prompt")

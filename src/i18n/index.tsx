@@ -232,6 +232,15 @@ export const messages = {
     "setup.copyCommand": "Copy command",
     "setup.recheck": "Re-check",
     "setup.rechecking": "Re-checking…",
+
+    "auth.title": "Access token",
+    "auth.subtitle": "This bridge requires an access token",
+    "auth.body": "Paste the access token printed by the bridge on startup (it is also stored in ~/.omp/web-bridge-token). The first visit usually arrives as a link containing ?token= — no manual entry needed.",
+    "auth.placeholder": "access token",
+    "auth.submit": "Unlock",
+    "auth.submitting": "Checking…",
+    "auth.invalid": "Token rejected — check the bridge console output and try again.",
+    "auth.storage": "Token accepted, but the browser refused to store it (private mode or site data blocked) — the gate cannot unlock.",
   },
 
   zh: {
@@ -419,6 +428,15 @@ export const messages = {
     "setup.copyCommand": "复制命令",
     "setup.recheck": "重新检测",
     "setup.rechecking": "检测中…",
+
+    "auth.title": "访问令牌",
+    "auth.subtitle": "该 bridge 已启用访问令牌",
+    "auth.body": "粘贴 bridge 启动时打印的访问令牌（同时保存在 ~/.omp/web-bridge-token）。首次访问通常通过带 ?token= 的链接进入，无需手动输入。",
+    "auth.placeholder": "访问令牌",
+    "auth.submit": "解锁",
+    "auth.submitting": "校验中…",
+    "auth.invalid": "令牌被拒绝 —— 请核对 bridge 控制台输出后重试。",
+    "auth.storage": "令牌有效,但浏览器拒绝存储(隐私模式或站点数据被禁用)—— 无法解锁。",
     "time.justNow": "刚刚",
     "time.minutesAgo": "{n} 分钟前",
     "time.hoursAgo": "{h} 小时前",

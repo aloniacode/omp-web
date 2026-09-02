@@ -3,6 +3,7 @@ import { useAppStore } from "./state/store";
 import { I18nProvider } from "./i18n";
 import { Sidebar } from "./components/Sidebar";
 import { SetupGuide } from "./components/SetupGuide";
+import { TokenGate } from "./components/TokenGate";
 import { TopBar } from "./components/TopBar";
 import { GoalBar } from "./components/GoalBar";
 import { ChatList } from "./components/ChatList";
@@ -11,7 +12,13 @@ import { ExtUiDialogs, Toasts } from "./components/Overlays";
 
 function Shell() {
   const health = useAppStore((s) => s.health);
+  const authRequired = useAppStore((s) => s.authRequired);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
+
+  // Blocking token gate until the bridge accepts the access token.
+  if (authRequired) {
+    return <TokenGate />;
+  }
 
   // Blocking install guide until the bridge finds the omp binary.
   if (health && !health.ompResolved) {

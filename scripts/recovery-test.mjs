@@ -7,6 +7,9 @@ import { chromium } from "playwright-core";
 
 const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const PORT = 8787;
+// Pin a token for both spawned bridges (env inherited) and the page visit.
+const TOKEN = "recovery-test-token";
+process.env.OMP_WEB_TOKEN = TOKEN;
 
 function startBridge(missing) {
   const child = spawn(process.execPath, ["server/bridge.mjs"], {
@@ -25,7 +28,7 @@ async function waitHttp(url, ok, timeoutMs = 10_000) {
   const start = Date.now();
   for (;;) {
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: { "x-omp-web-token": TOKEN } });
       const body = await res.json();
       if (Boolean(body.omp?.resolved) === ok) return;
     } catch {}
@@ -40,7 +43,7 @@ console.log("STEP0 missing bridge up");
 
 const browser = await chromium.launch({ executablePath: EDGE, headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-await page.goto(`http://127.0.0.1:5173/`, { waitUntil: "networkidle" });
+await page.goto(`http://127.0.0.1:5173/?token=${encodeURIComponent(TOKEN)}`, { waitUntil: "networkidle" });
 await page.waitForTimeout(1500);
 console.log("STEP1 guide shown:", (await page.locator("text=未检测到 oh-my-pi").count()) > 0);
 

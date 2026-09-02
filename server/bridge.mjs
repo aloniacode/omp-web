@@ -13,7 +13,8 @@
  * - heartbeat, graceful dispose, vite parent watchdog
  *
  * Env: PORT (8787), HOST (127.0.0.1), OMP_BIN ("omp"), OMP_CWD (process.cwd()),
- * OMP_ARGS (extra CLI args), OMP_MAX_UPLINK_MB (32).
+ * OMP_ARGS (extra CLI args), OMP_MAX_UPLINK_MB (32), OMP_WEB_TOKEN (access
+ * token override; "off" disables auth — see server/auth-token.mjs).
  */
 import http from "node:http";
 import path from "node:path";
@@ -25,6 +26,7 @@ import { WebSocketServer } from "ws";
 import { FrameAssembler } from "./rpc-frame.mjs";
 import { isAllowedOrigin } from "./origin-guard.mjs";
 import { createHttpApp } from "./http-app.mjs";
+import { resolveBridgeToken, verifyToken, TOKEN_FILE } from "./auth-token.mjs";
 import { NEGOTIATED_MAX_REASSEMBLED_BYTES, PROTOCOL_REQUEST_ID, PROTOCOL_VERSION, hasType } from "@omp-web/protocol";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -45,6 +47,17 @@ const MAX_LINE_BYTES = 128 * 1024 * 1024;
 const UPLINK_MB = Number(process.env.OMP_MAX_UPLINK_MB ?? 32);
 const MAX_UPLINK_BYTES = (Number.isFinite(UPLINK_MB) && UPLINK_MB > 0 ? UPLINK_MB : 32) * 1024 * 1024;
 const SESSIONS_DIR = path.join(os.homedir(), ".omp", "agent", "sessions");
+const { token: ACCESS_TOKEN } = resolveBridgeToken();
+
+/**
+ * Access-token gate shared by /api routes and WS upgrades: the header wins
+ * (fetch calls), the `?token=` query covers browsers (WebSocket can't set
+ * custom headers).
+ */
+function isAuthorized(req, url) {
+  const header = req.headers["x-omp-web-token"];
+  return verifyToken(typeof header === "string" ? header : url.searchParams.get("token"), ACCESS_TOKEN);
+}
 
 // ---------------------------------------------------------------------------
 // RPC child process with protocol v2 chunk reassembly
@@ -187,6 +200,7 @@ const handleHttp = createHttpApp({
   sessionsDir: SESSIONS_DIR,
   maxUplinkBytes: MAX_UPLINK_BYTES,
   distDir: DIST_DIR,
+  checkAuth: isAuthorized,
 });
 
 const server = http.createServer((req, res) => {
@@ -205,13 +219,18 @@ server.on("error", (err) => {
 });
 
 server.on("upgrade", (req, socket, head) => {
+  const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
   // WebSockets are not subject to CORS: without this check any page could
   // drive the agent (prompts run bash) and read everything it returns.
   if (!isAllowedOrigin(req.headers.origin, req.headers.host)) {
     socket.destroy();
     return;
   }
-  const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+  if (!isAuthorized(req, url)) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\nconnection: close\r\n\r\n");
+    socket.destroy();
+    return;
+  }
   if (url.pathname !== "/ws") {
     socket.destroy();
     return;
@@ -296,6 +315,13 @@ server.listen(PORT, HOST, () => {
   console.log(`[bridge] listening on http://${HOST}:${PORT}`);
   console.log(`[bridge] omp binary: ${OMP_BIN} (probed per /api/health)`);
   console.log(`[bridge] default agent cwd:  ${ompCwd}`);
+  if (ACCESS_TOKEN) {
+    console.log(`[bridge] access token: ${ACCESS_TOKEN}`);
+    console.log(`[bridge]   persisted at ${TOKEN_FILE} — open http://${HOST}:${PORT}/?token=${ACCESS_TOKEN}`);
+    console.log(`[bridge]   OMP_WEB_TOKEN=<token|off> to pin or disable auth`);
+  } else {
+    console.log("[bridge] access token: DISABLED (OMP_WEB_TOKEN=off) — any local process can drive the agent");
+  }
 });
 
 for (const sig of ["SIGINT", "SIGTERM"]) {

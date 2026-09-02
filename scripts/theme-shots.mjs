@@ -1,6 +1,7 @@
 import { chromium } from "playwright-core";
+import { withToken } from "./bridge-token.mjs";
 
-const BASE = process.argv[2] ?? "http://127.0.0.1:5173/";
+const BASE = withToken(process.argv[2] ?? "http://127.0.0.1:5173/");
 const browser = await chromium.launch({
   executablePath: "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   headless: true,

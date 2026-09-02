@@ -3,6 +3,7 @@ import { OmpRpcClient, type ConnStatus } from "../rpc/client";
 import { apiFetch } from "../rpc/connection";
 import { setComposerText } from "./composerText";
 import { storeT } from "../i18n";
+import { consumeUrlToken, getStoredToken, storeToken } from "../lib/auth";
 import { buildExecutePrompt, stripPlanContract, wrapPlanPrompt } from "../lib/planMode";
 import { stripGoalContract } from "../lib/goalMode";
 import { assistantText } from "../lib/format";
@@ -69,10 +70,15 @@ export interface UiNotice {
 
 export type { BridgeHealth } from "@omp-web/protocol";
 
+/** Outcome of the token gate's submit: unlocked, rejected, or unpersistable. */
+export type TokenSubmitResult = "ok" | "invalid" | "storage";
+
 export interface AppState {
   connStatus: ConnStatus;
   agentReady: boolean;
   health: BridgeHealth | null;
+  /** Bridge rejected the access token; the token gate blocks the UI until unlocked. */
+  authRequired: boolean;
   sessions: SessionMeta[];
   sessionId: string | null;
   sessionName: string | null;
@@ -122,6 +128,12 @@ export interface StoreActions {
   /** Surface a toast to the user (e.g. rejected paste feedback). */
   notify(level: UiNotice["level"], message: string, source?: string): void;
   recheckHealth(): Promise<boolean>;
+  /**
+   * Store an access token and re-probe. "invalid" covers rejected tokens and
+   * unreachable bridges; "storage" means the token was accepted but the
+   * browser refused to keep it (strict private mode).
+   */
+  submitToken(token: string): Promise<TokenSubmitResult>;
   refreshSessions(): void;
   setModel(provider: string, modelId: string): void;
   setThinkingLevel(level: string): void;
@@ -146,6 +158,7 @@ const initialState: AppState = {
   connStatus: "connecting",
   agentReady: false,
   health: null,
+  authRequired: false,
   sessions: [],
   sessionId: null,
   sessionName: null,
@@ -274,6 +287,40 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
         }
       })
       .catch(() => undefined);
+  };
+
+  /**
+   * Shared health probe. A 401 flips `authRequired` (token gate) on. When a
+   * tokenOverride is given it is sent as the explicit header — authoritative
+   * over anything in storage — so token validation never depends on
+   * localStorage being writable.
+   */
+  const probeHealth = async (
+    tokenOverride?: string,
+  ): Promise<{ probed: boolean; authRequired: boolean; ompResolved: boolean }> => {
+    try {
+      const init = tokenOverride !== undefined ? { headers: { "x-omp-web-token": tokenOverride } } : undefined;
+      const res = await apiFetch("/api/health", init);
+      if (res.status === 401) {
+        set({ authRequired: true });
+        return { probed: false, authRequired: true, ompResolved: false };
+      }
+      const body = (await res.json()) as {
+        ok?: boolean;
+        omp?: { resolved?: string | null; cwd?: string };
+      };
+      set({
+        authRequired: false,
+        health: {
+          ok: Boolean(body.ok),
+          ompResolved: body.omp?.resolved ?? null,
+          ompCwd: body.omp?.cwd ?? "",
+        },
+      });
+      return { probed: true, authRequired: false, ompResolved: Boolean(body.omp?.resolved) };
+    } catch {
+      return { probed: false, authRequired: false, ompResolved: false };
+    }
   };
 
   const loadAllMessages = async (): Promise<ChatEntry[]> => {
@@ -841,27 +888,39 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     refreshSessions,
 
     async recheckHealth() {
-      try {
-        const res = await apiFetch("/api/health");
-        const body = (await res.json()) as {
-          ok?: boolean;
-          omp?: { resolved?: string | null; cwd?: string };
-        };
-        set({
-          health: {
-            ok: Boolean(body.ok),
-            ompResolved: body.omp?.resolved ?? null,
-            ompCwd: body.omp?.cwd ?? "",
-          },
-        });
-        const available = Boolean(body.omp?.resolved);
-        // First time the binary shows up: recycle the socket so the bridge
-        // spawns a fresh agent child immediately.
-        if (available && !get().health?.ompResolved) client.reconnect();
-        return available;
-      } catch {
-        return false;
+      const hadOmp = Boolean(get().health?.ompResolved);
+      const result = await probeHealth();
+      // First time the binary shows up: recycle the socket so the bridge
+      // spawns a fresh agent child immediately.
+      if (result.ompResolved && !hadOmp) client.reconnect();
+      return result.ompResolved;
+    },
+
+    async submitToken(rawToken: string): Promise<TokenSubmitResult> {
+      // Tolerate pasting the whole ready-made URL the bridge prints.
+      const trimmed = rawToken.trim();
+      let token = trimmed;
+      if (trimmed.includes("token=")) {
+        try {
+          token = new URL(trimmed).searchParams.get("token") ?? trimmed;
+        } catch {
+          // not a URL — treat the input as a raw token
+        }
       }
+      if (!token) return "invalid";
+      const result = await probeHealth(token);
+      if (result.authRequired || !result.probed) return "invalid";
+      storeToken(token);
+      // Storage refused (strict private mode): the token works but cannot be
+      // kept, so every later call would 401 again — keep the gate open with
+      // an honest explanation instead of silently looping.
+      if (getStoredToken() !== token) return "storage";
+      // Fresh socket (it picks the new token up on connect) plus the REST
+      // surfaces that were rejected alongside the failed health probe.
+      client.reconnect();
+      refreshSessions();
+      refreshProjects();
+      return "ok";
     },
   };
 
@@ -892,19 +951,11 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
         : { connStatus: status },
     );
   });
+  // Consume `?token=<access token>` before anything talks to the bridge —
+  // including the socket below, which reads the token at connect time.
+  consumeUrlToken();
   client.start();
-  apiFetch("/api/health")
-    .then((res) => res.json())
-    .then((body: { ok?: boolean; omp?: { resolved?: string | null; cwd?: string } }) => {
-      set({
-        health: {
-          ok: Boolean(body.ok),
-          ompResolved: body.omp?.resolved ?? null,
-          ompCwd: body.omp?.cwd ?? "",
-        },
-      });
-    })
-    .catch(() => undefined);
+  void probeHealth();
   refreshSessions();
   refreshProjects();
 

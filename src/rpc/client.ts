@@ -1,5 +1,6 @@
 import type { RpcCommand, RpcFrame, RpcResponseFrame } from "./types";
 import { coalesceKey } from "../lib/idempotency";
+import { getStoredToken } from "../lib/auth";
 import { setConnectionId } from "./connection";
 
 export type ConnStatus = "connecting" | "connected" | "reconnecting" | "closed";
@@ -153,7 +154,12 @@ export class OmpRpcClient {
   #open() {
     if (this.#disposed) return;
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${proto}//${location.host}/ws`);
+    // The bridge access token rides the query string (WebSocket requests
+    // cannot carry custom headers); read at connect time so a token entered
+    // after boot is picked up by the next retry.
+    const token = getStoredToken();
+    const auth = token ? `?token=${encodeURIComponent(token)}` : "";
+    const ws = new WebSocket(`${proto}//${location.host}/ws${auth}`);
     this.#ws = ws;
     this.#setStatus(this.#attempt === 0 ? "connecting" : "reconnecting");
 

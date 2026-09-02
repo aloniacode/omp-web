@@ -13,16 +13,11 @@ let app;
 const connections = new Map();
 const children = new Set();
 
-beforeAll(() => {
-  tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "omp-http-"));
-  sessionsDir = path.join(tmpRoot, "sessions");
-  fs.mkdirSync(sessionsDir, { recursive: true });
-  state = { defaultCwd: path.join(tmpRoot, "project-a") };
-  fs.mkdirSync(state.defaultCwd, { recursive: true });
-  app = createHttpApp({
+function buildCtx() {
+  return {
     ompBin: "omp-test-missing-binary",
     getDefaultCwd: () => state.defaultCwd,
-    setDefaultCwd: (cwd) => {
+    setDefaultCwd: (cwd: string) => {
       state.defaultCwd = cwd;
     },
     connections,
@@ -30,7 +25,16 @@ beforeAll(() => {
     sessionsDir,
     maxUplinkBytes: 1024,
     distDir: path.join(tmpRoot, "dist"),
-  });
+  };
+}
+
+beforeAll(() => {
+  tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "omp-http-"));
+  sessionsDir = path.join(tmpRoot, "sessions");
+  fs.mkdirSync(sessionsDir, { recursive: true });
+  state = { defaultCwd: path.join(tmpRoot, "project-a") };
+  fs.mkdirSync(state.defaultCwd, { recursive: true });
+  app = createHttpApp(buildCtx());
 });
 
 afterAll(async () => {
@@ -81,6 +85,31 @@ describe("http-app routing", () => {
     });
     expect(status).toBe(403);
     expect(body.error).toMatch(/cross-origin/);
+  });
+
+  it("returns 401 authRequired for /api without a valid token, but keeps static open", async () => {
+    const gated = createHttpApp({
+      ...buildCtx(),
+      checkAuth: (_req: unknown, url: URL) => url.searchParams.get("token") === "let-me-in",
+    });
+    const denied = mockRes();
+    await gated(mockReq("/api/health"), denied);
+    expect(denied.statusCode).toBe(401);
+    const deniedBody = JSON.parse(denied.body);
+    expect(deniedBody.authRequired).toBe(true);
+
+    const viaHeader = mockRes();
+    await gated(mockReq("/api/health", { headers: { "x-omp-web-token": "nope" } }), viaHeader);
+    expect(viaHeader.statusCode).toBe(401);
+
+    const viaQuery = mockRes();
+    await gated(mockReq("/api/health?token=let-me-in"), viaQuery);
+    expect(viaQuery.statusCode).toBe(200);
+
+    // Static assets stay open so the token-entry page can load.
+    const page = mockRes();
+    await gated(mockReq("/"), page);
+    expect([200, 404]).toContain(page.statusCode);
   });
 
   it("answers /api/health with the probed binary name", async () => {

@@ -10,6 +10,8 @@
  * - sessionsDir:       ~/.omp/agent/sessions
  * - maxUplinkBytes:    transport limit shared with /api/scratch
  * - distDir:           built frontend served as static files
+ * - checkAuth:         (req, url) => boolean for the bridge access token;
+ *                      absent means auth is disabled (tests, OMP_WEB_TOKEN=off)
  */
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -53,6 +55,14 @@ export function createHttpApp(ctx) {
       return sendJson(res, 403, { error: "cross-origin request rejected" });
     }
     const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+    // The access token gates every /api route (static assets stay open so the
+    // token-entry page can load). Origin was already judged above.
+    if (url.pathname.startsWith("/api/") && ctx.checkAuth && !ctx.checkAuth(req, url)) {
+      return sendJson(res, 401, {
+        error: "unauthorized — open the bridge URL with ?token=<access token>, or send the x-omp-web-token header",
+        authRequired: true,
+      });
+    }
     // cwd-scoped endpoints resolve against the calling connection's directory
     // when the browser announces it (each tab can sit in a different project).
     const connectionCwd = () => {

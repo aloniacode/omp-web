@@ -48,6 +48,10 @@ your local `omp` binary; nothing is reimplemented here.
   `set_thinking_level`; compaction button (`compact`).
 - **Extension UI passthrough** — `select` / `confirm` / `input` / `editor` / `open_url`
   requests render as dialogs and answer via `extension_ui_response`.
+- **Access token** — the bridge requires a token on `/api` and WebSocket: generated on
+  first start (persisted at `~/.omp/web-bridge-token`, printed with a ready `?token=`
+  link), pinned or disabled via `OMP_WEB_TOKEN`; the page unlocks itself from `?token=`
+  or the in-app token gate.
 
 ## Architecture
 
@@ -91,14 +95,20 @@ pnpm build
 pnpm start        # http://127.0.0.1:8787
 ```
 
-Requires `omp` on `PATH` (override with `OMP_BIN`, plus `OMP_CWD`, `OMP_ARGS`, `PORT`, `HOST`).
+Requires `omp` on `PATH` (override with `OMP_BIN`, plus `OMP_CWD`, `OMP_ARGS`, `PORT`, `HOST`,
+and `OMP_WEB_TOKEN` to pin or disable the access token).
 The branch picker additionally needs `git` on the bridge's PATH. Oversized prompts are
 written to `<project>/.omp/scratch/` and referenced as files — add that directory to the
-project's `.gitignore` if you commit the repo. The bridge binds `127.0.0.1` and has
-**no auth** — it can drive your agent and run git in the agent directory; keep it local.
-Cross-origin requests (and WebSocket upgrades) from non-loopback origins are rejected,
-so browsing other sites while omp-web is running cannot drive the bridge (the exotic
-DNS-rebinding route is the documented exception — see `server/origin-guard.mjs`).
+project's `.gitignore` if you commit the repo.
+
+The bridge binds `127.0.0.1` and requires an **access token**: a random token is generated
+on first start (persisted at `~/.omp/web-bridge-token`, printed to the console with a
+ready-made `http://127.0.0.1:8787/?token=…` link). The page consumes `?token=` once and
+keeps it in localStorage; `/api` calls and WebSocket upgrades without a valid token get
+401. Set `OMP_WEB_TOKEN=<token>` to pin one, or `OMP_WEB_TOKEN=off` to disable auth
+entirely. Cross-origin requests from non-loopback origins are rejected, so browsing other
+sites while omp-web is running cannot drive the bridge (the exotic DNS-rebinding route is
+otherwise the documented exception — see `server/origin-guard.mjs`).
 
 ```sh
 pnpm vitest run                            # unit tests (pure helpers + server modules)

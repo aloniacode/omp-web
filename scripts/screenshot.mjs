@@ -8,8 +8,9 @@
  */
 import { chromium } from "playwright-core";
 import { mkdirSync } from "node:fs";
+import { withToken } from "./bridge-token.mjs";
 
-const URL = process.argv[2] ?? "http://127.0.0.1:8787/";
+const URL = withToken(process.argv[2] ?? "http://127.0.0.1:8787/");
 const OUT = process.argv[3] ?? "shots";
 mkdirSync(OUT, { recursive: true });
 
