@@ -34,6 +34,24 @@ export const NON_IDEMPOTENT_COMMANDS: ReadonlySet<string> = new Set([
   "cycle_thinking_level",
 ]);
 
+/**
+ * Read-only commands safe to re-send after a reconnect: a fresh agent child
+ * knows nothing of the dropped socket's in-flight requests, and these answer
+ * identically from the reloaded session. Anything state-advancing is NOT
+ * replayed — its caller gets the connection-lost error instead.
+ */
+export const REPLAYABLE_COMMANDS: ReadonlySet<string> = new Set([
+  "get_state",
+  "get_session_stats",
+  "get_available_models",
+  "get_messages",
+  "get_messages_page",
+]);
+
+export function isReplayable(command: RpcCommand): boolean {
+  return REPLAYABLE_COMMANDS.has(command.type);
+}
+
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "undefined";
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;

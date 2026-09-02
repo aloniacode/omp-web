@@ -1,5 +1,5 @@
 import type { RpcCommand, RpcFrame, RpcResponseFrame } from "./types";
-import { coalesceKey } from "../lib/idempotency";
+import { coalesceKey, isReplayable } from "../lib/idempotency";
 import { getStoredToken } from "../lib/auth";
 import { setConnectionId } from "./connection";
 
@@ -9,6 +9,8 @@ type FrameSink = (frame: RpcFrame) => void;
 type StatusSink = (status: ConnStatus) => void;
 
 interface PendingRequest {
+  command: RpcCommand;
+  timeoutMs: number;
   resolve: (response: RpcResponseFrame) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -75,6 +77,7 @@ export class OmpRpcClient {
   /** Drop the current socket (fresh child on next connect) and reset backoff. */
   reconnect(): void {
     this.#attempt = 0;
+    clearTimeout(this.#retryTimer);
     if (this.#ws) this.#ws.close();
     else this.#open();
   }
@@ -116,21 +119,20 @@ export class OmpRpcClient {
     const id = `web-${this.#nextId++}`;
     const frame = { ...command, id };
     const { promise, resolve, reject } = Promise.withResolvers<RpcResponseFrame<TData>>();
-    const timer = setTimeout(() => {
-      this.#pending.delete(id);
-      reject(new Error(`RPC "${command.type}" timed out`));
-    }, timeoutMs);
     // The wire resolves with an unparameterized frame; the caller owns TData.
     const entry: PendingRequest = {
+      command,
+      timeoutMs,
       resolve: resolve as (response: RpcResponseFrame) => void,
       reject,
-      timer,
+      timer: setTimeout(() => undefined, 0),
     };
+    this.#armTimer(id, entry);
     this.#pending.set(id, entry);
     try {
       this.#sendRaw(frame);
     } catch (err) {
-      clearTimeout(timer);
+      clearTimeout(entry.timer);
       this.#pending.delete(id);
       reject(err instanceof Error ? err : new Error(String(err)));
     }
@@ -153,6 +155,10 @@ export class OmpRpcClient {
 
   #open() {
     if (this.#disposed) return;
+    // A scheduled retry or a reconnect() call can land while a socket is
+    // already open/connecting — opening twice would double-wire handlers and
+    // double-replay pending requests.
+    if (this.#ws && this.#ws.readyState <= WebSocket.OPEN) return;
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     // The bridge access token rides the query string (WebSocket requests
     // cannot carry custom headers); read at connect time so a token entered
@@ -166,6 +172,19 @@ export class OmpRpcClient {
     ws.onopen = () => {
       this.#openedAt = Date.now();
       this.#setStatus("connected");
+      // A fresh agent child knows nothing of requests the dropped socket had
+      // in flight; read-only ones are re-sent on the new socket under their
+      // original ids with a fresh deadline, so the awaiting callers resolve
+      // as if nothing happened.
+      for (const [id, entry] of this.#pending) {
+        if (!isReplayable(entry.command)) continue;
+        try {
+          this.#armTimer(id, entry);
+          this.#sendRaw({ ...entry.command, id });
+        } catch {
+          break; // socket died again — the close handler takes over
+        }
+      }
     };
 
     ws.onmessage = (ev) => {
@@ -201,7 +220,13 @@ export class OmpRpcClient {
     ws.onclose = () => {
       this.#ws = null;
       setConnectionId(null);
-      this.#failAllPending(new Error("connection to agent bridge lost"));
+      // Read-only in-flight requests survive the drop (replayed on reopen);
+      // everything else fails its caller now — prompts must not silently
+      // re-send.
+      this.#failPending(
+        new Error("connection to agent bridge lost"),
+        (entry) => !isReplayable(entry.command),
+      );
       if (this.#userClosed || this.#disposed) {
         this.#setStatus("closed");
         return;
@@ -219,6 +244,15 @@ export class OmpRpcClient {
     };
   }
 
+  /** (Re)arm a pending entry's timeout — replayed requests get a fresh one. */
+  #armTimer(id: string, entry: PendingRequest) {
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => {
+      this.#pending.delete(id);
+      entry.reject(new Error(`RPC "${entry.command.type}" timed out`));
+    }, entry.timeoutMs);
+  }
+
   #sendRaw(frame: Record<string, unknown>) {
     if (this.#ws?.readyState !== WebSocket.OPEN) {
       throw new Error("not connected");
@@ -227,10 +261,15 @@ export class OmpRpcClient {
   }
 
   #failAllPending(error: Error) {
-    for (const [, entry] of this.#pending) {
+    this.#failPending(error, () => true);
+  }
+
+  #failPending(error: Error, predicate: (entry: PendingRequest) => boolean) {
+    for (const [id, entry] of this.#pending) {
+      if (!predicate(entry)) continue;
       clearTimeout(entry.timer);
       entry.reject(error);
+      this.#pending.delete(id);
     }
-    this.#pending.clear();
   }
 }

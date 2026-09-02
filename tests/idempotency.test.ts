@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coalesceKey, isDuplicatePendingMessage } from "../src/lib/idempotency";
+import { coalesceKey, isDuplicatePendingMessage, isReplayable } from "../src/lib/idempotency";
 import { OmpRpcClient } from "../src/rpc/client";
 import type { RpcCommand } from "../src/rpc/types";
 
@@ -67,53 +67,54 @@ describe("isDuplicatePendingMessage", () => {
   });
 });
 
-describe("OmpRpcClient in-flight coalescing", () => {
-  class FakeWebSocket {
-    static CONNECTING = 0;
-    static OPEN = 1;
-    readyState = FakeWebSocket.OPEN;
-    sent: string[] = [];
-    onopen?: () => void;
-    onmessage?: (ev: { data: string }) => void;
-    onclose?: () => void;
-    onerror?: () => void;
-    send(data: string) {
-      this.sent.push(data);
-    }
-    close() {
-      this.readyState = 3;
-    }
+class FakeWebSocket {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  readyState = FakeWebSocket.OPEN;
+  sent: string[] = [];
+  onopen?: () => void;
+  onmessage?: (ev: { data: string }) => void;
+  onclose?: () => void;
+  onerror?: () => void;
+  send(data: string) {
+    this.sent.push(data);
   }
+  close() {
+    this.readyState = 3;
+  }
+}
 
-  function makeClient() {
-    const sockets: FakeWebSocket[] = [];
-    const OriginalWebSocket = globalThis.WebSocket;
-    const OriginalLocation = globalThis.location;
-    (globalThis as { WebSocket: unknown }).WebSocket = class extends FakeWebSocket {
-      constructor() {
-        super();
-        sockets.push(this);
-      }
-    };
-    (globalThis as { location: unknown }).location = { protocol: "http:" };
-    const client = new OmpRpcClient();
-    client.start();
-    const socket = sockets[0];
-    socket.onopen?.();
-    return {
+function makeClient() {
+  const sockets: FakeWebSocket[] = [];
+  const OriginalWebSocket = globalThis.WebSocket;
+  const OriginalLocation = globalThis.location;
+  (globalThis as { WebSocket: unknown }).WebSocket = class extends FakeWebSocket {
+    constructor() {
+      super();
+      sockets.push(this);
+    }
+  };
+  (globalThis as { location: unknown }).location = { protocol: "http:" };
+  const client = new OmpRpcClient();
+  client.start();
+  const socket = sockets[0];
+  socket.onopen?.();
+  return {
       client,
       socket,
+      sockets,
+      respond(id: string, data: unknown, on?: FakeWebSocket) {
+        (on ?? socket).onmessage?.({ data: JSON.stringify({ id, type: "response", command: "x", success: true, data }) });
+      },
       cleanup() {
         client.dispose();
         (globalThis as { WebSocket: unknown }).WebSocket = OriginalWebSocket;
         (globalThis as { location: unknown }).location = OriginalLocation;
       },
-      respond(id: string, data: unknown) {
-        socket.onmessage?.({ data: JSON.stringify({ id, type: "response", command: "x", success: true, data }) });
-      },
     };
   }
 
+describe("OmpRpcClient in-flight coalescing", () => {
   it("shares one request for concurrent identical idempotent commands", async () => {
     const env = makeClient();
     try {
@@ -154,6 +155,77 @@ describe("OmpRpcClient in-flight coalescing", () => {
       expect(env.socket.sent).toHaveLength(2);
       env.respond(JSON.parse(env.socket.sent[1]).id, null);
       await p2;
+    } finally {
+      env.cleanup();
+    }
+  });
+});
+
+describe("isReplayable", () => {
+  it("covers read-only commands only", () => {
+    for (const type of ["get_state", "get_session_stats", "get_available_models", "get_messages", "get_messages_page"]) {
+      expect(isReplayable({ type } as RpcCommand)).toBe(true);
+    }
+    for (const command of [
+      { type: "prompt", message: "hi" },
+      { type: "abort" },
+      { type: "new_session" },
+      { type: "switch_session", sessionPath: "x" },
+      { type: "compact" },
+      { type: "set_model", provider: "p", modelId: "m" },
+    ] as RpcCommand[]) {
+      expect(isReplayable(command)).toBe(false);
+    }
+  });
+});
+
+describe("OmpRpcClient reconnect replay", () => {
+  function openSocket(sockets: Array<InstanceType<typeof FakeWebSocket>>) {
+    const next = sockets[sockets.length - 1];
+    next.onopen?.();
+    return next;
+  }
+
+  it("replays read-only in-flight requests on reconnect and fails the rest", async () => {
+    const env = makeClient();
+    try {
+      const stats = env.client.request({ type: "get_session_stats" });
+      const prompt = env.client
+        .request({ type: "prompt", message: "hi" })
+        .then(() => "resolved", (err: Error) => `rejected: ${err.message}`);
+      expect(env.socket.sent).toHaveLength(2);
+      const originalStatsId = JSON.parse(env.socket.sent[0]).id;
+
+      // Drop the socket: the prompt fails immediately, stats stays pending.
+      env.socket.onclose?.();
+      await expect(prompt).resolves.toMatch(/^rejected: connection to agent bridge lost/);
+
+      // Reconnect on a fresh socket (reconnect() bypasses the retry backoff,
+      // exactly like the store's submit-token path): stats is re-sent under
+      // its original id.
+      env.client.reconnect();
+      const reopened = openSocket(env.sockets);
+      expect(reopened.sent).toHaveLength(1);
+      const resent = JSON.parse(reopened.sent[0]);
+      expect(resent.type).toBe("get_session_stats");
+      expect(resent.id).toBe(originalStatsId);
+      env.respond(originalStatsId, { tokens: 1 }, reopened);
+      await expect(stats).resolves.toMatchObject({ data: { tokens: 1 } });
+    } finally {
+      env.cleanup();
+    }
+  });
+
+  it("does not replay when the caller gave up (timeout cleared the entry)", async () => {
+    const env = makeClient();
+    try {
+      const req = env.client.request({ type: "get_state" }, 10);
+      env.socket.onclose?.();
+      await new Promise((r) => setTimeout(r, 30)); // timer fires while offline
+      await expect(req).rejects.toThrow(/timed out/);
+      env.client.reconnect();
+      const reopened = openSocket(env.sockets);
+      expect(reopened.sent).toHaveLength(0);
     } finally {
       env.cleanup();
     }

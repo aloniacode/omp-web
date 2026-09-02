@@ -363,7 +363,15 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       if (stateResp.success && stateResp.data) applyAgentState(stateResp.data);
       const entries = await loadAllMessages();
       if (loadEpoch !== epoch) return;
-      set({ messages: entries });
+      set((state) => ({
+        messages: entries,
+        // A shrinking reload (compaction/handoff committed by the previous
+        // child) can leave the plan-mode anchor beyond the transcript — clamp
+        // so the review bar isn't permanently suppressed.
+        ...(state.planModeFromIndex != null
+          ? { planModeFromIndex: Math.min(state.planModeFromIndex, entries.length) }
+          : null),
+      }));
       void client.request({ type: "get_session_stats" });
       void client.request({ type: "get_available_models" });
     } catch (err) {
@@ -971,21 +979,27 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     handleFrame(frame);
   });
   client.onStatus((status) => {
-    set((state) =>
-      status === "connected"
-        ? // Fresh child process after every reconnect until `agent_ready`.
-          // projects/projectCwd come from the bridge (not the agent child), so
-          // they survive the reset; they are re-synced on `ready`.
-          {
-            ...initialState,
-            connStatus: status,
-            health: state.health,
-            projects: state.projects,
-            projectCwd: state.projectCwd,
-            actions: state.actions,
-          }
-        : { connStatus: status },
-    );
+    if (status !== "connected") {
+      set({ connStatus: status });
+      return;
+    }
+    // Every reconnect is a fresh agent child. Committed history, plan mode,
+    // goal, todos, models and the bridge-side surfaces (health, projects,
+    // auth) survive — the fresh child's `ready` re-verifies them via a full
+    // transcript reload. Only live-turn state died with the old child, along
+    // with dialogs that could never be answered by anything else.
+    set((state) => ({
+      ...state,
+      connStatus: status,
+      agentReady: false,
+      agentState: null,
+      streamingMsg: null,
+      toolRuns: [],
+      stopping: false,
+      awaitingAgent: false,
+      handoffInFlight: false,
+      extStack: [],
+    }));
   });
   // Consume `?token=<access token>` before anything talks to the bridge —
   // including the socket below, which reads the token at connect time.
