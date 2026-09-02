@@ -8,6 +8,7 @@ import {
   Flag as IconFlag,
   Image as IconImage,
   Plus as IconPlus,
+  Puzzle as IconPuzzle,
   Send as IconSend,
   Square as IconSquare,
   X as IconX,
@@ -26,6 +27,7 @@ import type { Goal } from "../rpc/types";
 import { buildGoalKickoff, buildGoalOpPrompt, GOAL_STATUS_KEYS, type GoalOp } from "../lib/goalMode";
 import {
   buildCommandItems,
+  commandInsertToken,
   filterCommandItems,
   parseLocalSlashCommand,
   type CommandItem,
@@ -119,6 +121,7 @@ export function Composer() {
   const connected = useAppStore((s) => s.connStatus === "connected" && s.agentReady);
   const stopping = useAppStore((s) => s.stopping);
   const isStreaming = useAppStore((s) => Boolean(s.agentState?.isStreaming));
+  const agentCommands = useAppStore((s) => s.agentCommands);
   // Explicitly non-vision current model (agent state first, then the model
   // catalog): only rejects when known to lack image support.
   const visionBlocked = useAppStore((s) => {
@@ -170,10 +173,11 @@ export function Composer() {
       .catch(() => undefined);
   }, [mention?.kind]);
 
-  // Unified "/" palette: local commands first, then the session's skills.
+  // Unified "/" palette: local commands, then agent-pushed commands, then the
+  // session's skills.
   const commandItems = useMemo(
-    () => buildCommandItems(skills, (name) => t(`cmd.${name}` as MessageKey)),
-    [skills, t],
+    () => buildCommandItems(skills, agentCommands, (name) => t(`cmd.${name}` as MessageKey)),
+    [skills, agentCommands, t],
   );
   const filteredCommands = useMemo(
     () => (mention?.kind === "command" ? filterCommandItems(commandItems, mention.query) : []),
@@ -252,7 +256,7 @@ export function Composer() {
         return;
       }
       // Arg-taking commands and skills insert their token for completion.
-      const insertion = `/${picked.name} `;
+      const insertion = `${commandInsertToken(picked)} `;
       const next = text.slice(0, mention.start) + insertion + text.slice(caret);
       setComposerText(next);
       setMention(null);
@@ -483,12 +487,17 @@ export function Composer() {
                   // Commands and skills are pre-ordered in one flat list; a
                   // header renders whenever the group changes.
                   const showHeader = index === 0 || filteredCommands[index - 1].group !== item.group;
-                  const ItemIcon = item.group === "commands" ? COMMAND_ICONS[item.name] : IconZap;
+                  const ItemIcon =
+                    item.group === "commands" ? COMMAND_ICONS[item.name] : item.group === "agent" ? IconPuzzle : IconZap;
                   return (
                     <div key={`${item.group}:${item.name}`}>
                       {showHeader && (
                         <p className="border-b border-zinc-100 px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
-                          {item.group === "commands" ? t("cmd.commands") : t("composer.skills")}
+                          {item.group === "commands"
+                            ? t("cmd.commands")
+                            : item.group === "agent"
+                              ? t("cmd.agent")
+                              : t("composer.skills")}
                         </p>
                       )}
                       <button

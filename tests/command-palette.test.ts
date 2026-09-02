@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildCommandItems, filterCommandItems, LOCAL_COMMAND_ITEMS, LOCAL_SLASH_COMMANDS, parseLocalSlashCommand, type SkillEntry } from "../src/lib/slash";
+import {
+  agentCommandItems,
+  buildCommandItems,
+  filterCommandItems,
+  LOCAL_COMMAND_ITEMS,
+  LOCAL_SLASH_COMMANDS,
+  parseLocalSlashCommand,
+  type SkillEntry,
+} from "../src/lib/slash";
+import type { AvailableCommand } from "../src/rpc/types";
 import { messages } from "../src/i18n";
 
 const desc = (name: string) => `desc:${name}`;
@@ -9,21 +18,31 @@ const SKILLS: SkillEntry[] = [
   { name: "release-notes", description: "", source: "global" },
 ];
 
-const makeItems = () => buildCommandItems(SKILLS, desc);
+const AGENT_COMMANDS: AvailableCommand[] = [
+  { name: "compact", description: "builtin compact", source: "builtin" },
+  { name: "deploy", description: "Deploy the service", source: "custom" },
+  { name: "mcp-search", description: "Search the web", source: "mcp_prompt" },
+  { name: "review", description: "Agent-side review", source: "skill" },
+  { name: "plan", description: "shadowed local", source: "extension" },
+];
+
+const makeItems = () => buildCommandItems(SKILLS, AGENT_COMMANDS, desc);
 
 describe("buildCommandItems", () => {
-  it("lists local commands first, then skills", () => {
+  it("lists local commands, then agent commands, then skills", () => {
     const items = makeItems();
-    expect(items[0].group).toBe("commands");
-    expect(items[items.length - 1].group).toBe("skills");
     expect(items.map((i) => i.name)).toEqual([
       "plan",
       "goal",
       "handoff",
       "compact",
+      "deploy",
+      "mcp-search",
       "review",
       "release-notes",
     ]);
+    expect(items[4].group).toBe("agent");
+    expect(items[6].group).toBe("skills");
   });
 
   it("marks no-arg commands as exec and arg-taking ones as insert", () => {
@@ -34,11 +53,31 @@ describe("buildCommandItems", () => {
     expect(byName.get("review")?.kind).toBe("insert");
   });
 
-  it("resolves local descriptions via the describe callback and keeps skill ones", () => {
+  it("resolves local descriptions via the describe callback and keeps others", () => {
     const byName = new Map(makeItems().map((item) => [item.name, item]));
     expect(byName.get("plan")?.description).toBe("desc:plan");
-    expect(byName.get("review")?.description).toBe("Review the diff");
-    expect(byName.get("review")?.source).toBe("project");
+    expect(byName.get("deploy")?.description).toBe("Deploy the service");
+    expect(byName.get("deploy")?.source).toBe("custom");
+    expect(byName.get("review")?.description).toBe("Review the diff"); // skill wins over agent's skill-sourced twin
+  });
+});
+
+describe("agentCommandItems", () => {
+  it("drops builtin and skill-sourced commands plus local-name collisions", () => {
+    const names = agentCommandItems(AGENT_COMMANDS).map((item) => item.name);
+    expect(names).toEqual(["deploy", "mcp-search"]);
+  });
+
+  it("keeps the skill group out of the agent group", () => {
+    expect(agentCommandItems(AGENT_COMMANDS).every((item) => item.group === "agent")).toBe(true);
+  });
+
+  it("dedupes repeated names within one update payload", () => {
+    const names = agentCommandItems([
+      { name: "deploy", description: "first", source: "custom" },
+      { name: "deploy", description: "second", source: "extension" },
+    ]).map((item) => item.name);
+    expect(names).toEqual(["deploy"]);
   });
 });
 
@@ -54,8 +93,9 @@ describe("filterCommandItems", () => {
     expect(names).not.toContain("goal");
   });
 
-  it("matches hyphenated skill names", () => {
+  it("matches hyphenated skill and agent command names", () => {
     expect(filterCommandItems(makeItems(), "release").map((item) => item.name)).toEqual(["release-notes"]);
+    expect(filterCommandItems(makeItems(), "mcp-").map((item) => item.name)).toEqual(["mcp-search"]);
   });
 });
 
@@ -78,9 +118,14 @@ describe("parseLocalSlashCommand stays palette-consistent", () => {
     }
   });
 
-  it("drops skills whose names collide with local commands", () => {
-    const items = buildCommandItems([{ name: "compact", description: "shadowed" }, ...SKILLS], desc);
+  it("drops skills whose names collide with local or agent commands", () => {
+    const items = buildCommandItems(
+      [{ name: "compact", description: "shadowed" }, { name: "deploy", description: "shadowed too" }, ...SKILLS],
+      AGENT_COMMANDS,
+      desc,
+    );
     expect(items.filter((item) => item.name === "compact")).toHaveLength(1);
+    expect(items.filter((item) => item.name === "deploy")).toHaveLength(1);
     expect(items.filter((item) => item.group === "skills").map((item) => item.name)).toEqual([
       "review",
       "release-notes",

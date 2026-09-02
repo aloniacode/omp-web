@@ -19,6 +19,7 @@ import {
 } from "../lib/oversize";
 import type {
   AgentEndFrame,
+  AvailableCommand,
   ImageContent,
   AgentMessage,
   AssistantMessage,
@@ -36,11 +37,13 @@ import type {
   SessionStats,
   ToolExecutionFrame,
   ThinkingLevel,
+  TodoPhase,
   ToolResultLike,
   RpcHandoffResult,
   Usage,
   UserMessage,
 } from "../rpc/types";
+import { normalizeTodoPhases } from "../lib/todos";
 
 // ── View models ─────────────────────────────────────────────────────────────
 
@@ -106,6 +109,10 @@ export interface AppState {
   planModeFromIndex: number | null;
   /** Active session goal (goal mode), pushed by `goal_updated` events. */
   goal: Goal | null;
+  /** Session todo list (todo tool), from get_state snapshots and todo-tool runs. */
+  todos: TodoPhase[];
+  /** Agent-pushed slash commands (`available_commands_update`), for the palette. */
+  agentCommands: AvailableCommand[];
   /** Handoff generation in flight (native RPC `handoff` command). */
   handoffInFlight: boolean;
 }
@@ -179,6 +186,8 @@ const initialState: AppState = {
   planMode: false,
   planModeFromIndex: null,
   goal: null,
+  todos: [],
+  agentCommands: [],
   handoffInFlight: false,
 };
 
@@ -369,6 +378,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       sessionName: data.sessionName ?? state.sessionName,
       activePath: data.sessionFile ?? state.activePath,
       stopping: data.isStreaming ? state.stopping : false,
+      ...(data.todoPhases !== undefined ? { todos: normalizeTodoPhases(data.todoPhases) } : null),
     }));
   };
 
@@ -437,6 +447,12 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
         // pathological outputs (the agent transcript keeps the full text).
         const text = truncateToolOutput(textOfToolResult(payload));
         const done = frame.type === "tool_execution_end";
+        // Completed todo-tool runs carry the fresh todo snapshot in details
+        // (an empty phases array is a legit "dropped all" state).
+        if (done && tool.toolName === "todo" && !tool.isError && payload && typeof payload === "object") {
+          const details = (payload as ToolResultLike & { details?: { phases?: unknown } }).details;
+          if (details && Array.isArray(details.phases)) set({ todos: normalizeTodoPhases(details.phases) });
+        }
         const run: ToolRun = {
           toolCallId: tool.toolCallId,
           toolName: tool.toolName,
@@ -469,6 +485,25 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
         set({ goal: update.goal ?? null });
         break;
       }
+
+      case "available_commands_update": {
+        // Pushed at child startup and whenever command metadata changes
+        // (switch_session included); a fresh child per connection re-emits it.
+        const commands = (frame as { commands?: unknown }).commands;
+        if (Array.isArray(commands)) {
+          set({
+            agentCommands: commands.filter(
+              (command): command is AvailableCommand =>
+                typeof command === "object" && command !== null && typeof (command as AvailableCommand).name === "string",
+            ),
+          });
+        }
+        break;
+      }
+
+      case "todo_auto_clear":
+        set({ todos: [] });
+        break;
 
       case "notice": {
         const notice = frame as NoticeFrame;
@@ -536,7 +571,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       }
 
       default:
-        break; // tolerated: available_commands_update, subagent frames, todo reminders, …
+        break; // tolerated: subagent frames, todo reminders, session_info_update, …
     }
   };
 
@@ -583,6 +618,7 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
             planMode: false,
             planModeFromIndex: null,
             goal: null,
+            todos: [],
             handoffInFlight: false,
           });
           void initSession();

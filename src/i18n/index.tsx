@@ -104,10 +104,14 @@ export const messages = {
     "composer.noSkills": "No matching commands or skills",
 
     "cmd.commands": "Commands",
+    "cmd.agent": "Agent commands",
     "cmd.plan": "Plan mode — plan before executing",
     "cmd.goal": "Goal mode — set a persistent objective",
     "cmd.handoff": "Handoff — continue from a compacted handoff summary",
     "cmd.compact": "Compact the context now",
+
+    "todo.title": "Todos",
+    "todo.progress": "{done}/{total} done",
     "composer.usageTotal": "{tokens} tokens",
     "composer.usageCost": "estimated conversation cost",
     "composer.usageContext": "Context: {used} / {window} tokens ({percent})",
@@ -341,10 +345,14 @@ export const messages = {
     "composer.noSkills": "没有匹配的命令或技能",
 
     "cmd.commands": "命令",
+    "cmd.agent": "智能体命令",
     "cmd.plan": "规划模式 — 先规划后执行",
     "cmd.goal": "目标模式 — 设定持久目标",
     "cmd.handoff": "交接 — 从压缩的交接摘要继续",
     "cmd.compact": "立即压缩上下文",
+
+    "todo.title": "任务清单",
+    "todo.progress": "{done}/{total} 已完成",
     "composer.usageTotal": "{tokens} tokens",
     "composer.usageCost": "对话预估费用",
     "composer.usageContext": "上下文：{used} / {window} tokens（{percent}）",

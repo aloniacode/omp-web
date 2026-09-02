@@ -16,9 +16,14 @@
 - **Token 消耗展示** — 单条消息的 `↑input ↓output · cache · $cost · tok/s · model` 标签,
   顶栏的会话总量与费用,以及上下文窗口用量环
   (来自 `get_session_stats` / `get_state.contextUsage`)。
-- **统一 `/` 命令面板** — 一个弹窗同时承载本地命令与会话技能(带描述、图标、全宽、
-  键盘可导航):plan、goal、handoff、compact。无参数命令选中即执行;带参数命令插入
-  命令 token 供补全。`@` 文件引用仍是独立弹窗。
+- **统一 `/` 命令面板** — 一个弹窗同时承载本地命令、智能体推送的命令
+  (`available_commands_update`:扩展、自定义/文件命令、MCP prompt)与会话技能(带描述、
+  图标、全宽、键盘可导航):plan、goal、handoff、compact。无参数命令选中即执行;带参数
+  命令插入命令 token 供补全(技能按上游约定插入 `/skill:<name>`)。`@` 文件引用仍是
+  独立弹窗。
+- **任务清单面板** — 会话任务列表(`get_state.todoPhases`,todo 工具运行实时更新,
+  `todo_auto_clear` 清空):分阶段进度、状态图标(pending / in-progress / completed /
+  abandoned / blocked),可折叠。
 - **规划模式(Plan mode)** — 对应 omp 的 `/plan`(先规划后执行)。规划模式下的 prompt
   会被包进只读规划契约,要求把最终计划放进标记为 `plan` 的围栏代码块;最新回合随后
   出现审阅栏,提供**批准并实施**(退出规划模式)与复制操作。激活时顶栏显示规划徽章。

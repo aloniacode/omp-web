@@ -4,6 +4,7 @@ import { I18nProvider } from "./i18n";
 import { Sidebar } from "./components/Sidebar";
 import { SetupGuide } from "./components/SetupGuide";
 import { TokenGate } from "./components/TokenGate";
+import { TodoBar } from "./components/TodoBar";
 import { TopBar } from "./components/TopBar";
 import { GoalBar } from "./components/GoalBar";
 import { ChatList } from "./components/ChatList";
@@ -31,6 +32,7 @@ function Shell() {
       <main className="flex min-w-0 flex-1 flex-col">
         <TopBar onToggleSidebar={() => setSidebarOpen((v) => !v)} />
         <GoalBar />
+        <TodoBar />
         <ChatList />
         <Composer />
       </main>

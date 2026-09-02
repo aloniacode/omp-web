@@ -17,10 +17,15 @@ your local `omp` binary; nothing is reimplemented here.
 - **Token consumption display** — per-message `↑input ↓output · cache · $cost · tok/s · model`
   chips, conversation totals and cost in the top bar, and a context-window usage meter
   (from `get_session_stats` / `get_state.contextUsage`).
-- **Unified `/` command palette** — one popup for local commands and the session's skills
-  (with descriptions, icons, and full-width keyboard-navigable list): plan, goal, handoff,
-  compact. No-arg commands run on pick; arg-taking ones insert their token for completion.
+- **Unified `/` command palette** — one popup for local commands, the agent's own pushed
+  commands (`available_commands_update`: extensions, custom/file commands, MCP prompts),
+  and the session's skills (with descriptions, icons, and full-width keyboard-navigable
+  list): plan, goal, handoff, compact. No-arg commands run on pick; arg-taking ones
+  insert their token for completion (skills as `/skill:<name>`, as upstream expects).
   `@` file references stay a separate popup.
+- **Todo panel** — the session's task list (`get_state.todoPhases`, live-updated from
+  `todo` tool runs, cleared by `todo_auto_clear`): per-phase progress, status icons
+  (pending / in-progress / completed / abandoned / blocked), collapsible.
 - **Plan mode** — mirror of omp's `/plan` (plan before executing). Prompts sent in plan mode
   are wrapped in a read-only planning contract that asks for the final plan in a fenced
   block tagged `plan`; the latest turn then gets a review bar with **Approve & implement**

@@ -32,6 +32,7 @@ export type {
   RpcResponseFrame,
   SessionMeta,
 } from "@omp-web/protocol";
+import type { TodoPhase } from "../lib/todos";
 
 // ── Content blocks ──────────────────────────────────────────────────────────
 
@@ -177,17 +178,11 @@ export interface ContextUsage {
   percent: number;
 }
 
-export interface TodoTask {
-  id: string;
-  content: string;
-  status: "pending" | "in_progress" | "completed";
-}
+// ── Todos ───────────────────────────────────────────────────────────────────
+// Wire shapes (mirroring oh-my-pi's tools/todo.ts) live in lib/todos.ts next
+// to their tolerant normalization.
 
-export interface TodoPhase {
-  id: string;
-  name: string;
-  tasks: TodoTask[];
-}
+export type { TodoItem, TodoPhase, TodoStatus } from "../lib/todos";
 
 // ── Goal mode ───────────────────────────────────────────────────────────────
 // Mirrors oh-my-pi's goals/state.ts (Goal / GoalModeState) and the
@@ -276,8 +271,21 @@ export interface AvailableCommand {
   name: string;
   description?: string;
   aliases?: string[];
+  /** builtin | skill | extension | custom | mcp_prompt | file */
   source: string;
   input?: { hint?: string };
+  subcommands?: Array<{ name: string; description?: string; usage?: string }>;
+}
+
+/** Pushed at startup and whenever command metadata changes. */
+export interface AvailableCommandsUpdateFrame {
+  type: "available_commands_update";
+  commands: AvailableCommand[];
+}
+
+/** The session's todo list was auto-cleared; hosts should drop their snapshot. */
+export interface TodoAutoClearFrame {
+  type: "todo_auto_clear";
 }
 
 export type ExtensionUiMethod =
