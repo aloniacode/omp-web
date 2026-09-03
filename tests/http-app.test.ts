@@ -9,6 +9,7 @@ let tmpRoot;
 let sessionsDir;
 let state;
 let app;
+let pickFolderImpl = async () => ({ path: null, canceled: true });
 
 const connections = new Map();
 const children = new Set();
@@ -119,11 +120,27 @@ describe("http-app routing", () => {
     expect(body.omp.bin).toBe("omp-test-missing-binary");
   });
 
-  it("maps a missing browse directory to a 400 with the exact message", async () => {
-    const missing = path.join(tmpRoot, "does-not-exist");
-    const { status, body } = await call(`/api/fs?path=${encodeURIComponent(missing)}`);
-    expect(status).toBe(400);
-    expect(body.error).toBe(`directory not found: ${missing}`);
+  it("returns the native picker's chosen folder", async () => {
+    pickFolderImpl = async () => ({ path: tmpRoot, canceled: false });
+    const { status, body } = await call("/api/pick-folder", { method: "POST" });
+    expect(status).toBe(200);
+    expect(body).toEqual({ path: tmpRoot, canceled: false });
+  });
+
+  it("reports a cancelled native folder dialog without an error", async () => {
+    pickFolderImpl = async () => ({ path: null, canceled: true });
+    const { status, body } = await call("/api/pick-folder", { method: "POST" });
+    expect(status).toBe(200);
+    expect(body).toEqual({ path: null, canceled: true });
+  });
+
+  it("maps a failed native folder dialog to a 500 with the message", async () => {
+    pickFolderImpl = async () => {
+      throw new Error("cannot open folder picker: no dialog available");
+    };
+    const { status, body } = await call("/api/pick-folder", { method: "POST" });
+    expect(status).toBe(500);
+    expect(body.error).toBe("cannot open folder picker: no dialog available");
   });
 
   it("contains static path resolution inside distDir", async () => {

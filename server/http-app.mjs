@@ -21,7 +21,8 @@ import { listSkills } from "./skills.mjs";
 import { listSessions, deleteSessionFile } from "./session-store.mjs";
 import { listBranches, checkoutBranch } from "./git-branches.mjs";
 import { writeScratchFile } from "./scratch.mjs";
-import { browseDir, fsRoots, whichExecutable } from "./fs-browse.mjs";
+import { whichExecutable } from "./fs-browse.mjs";
+import { pickFolder } from "./folder-dialog.mjs";
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -137,10 +138,9 @@ export function createHttpApp(ctx) {
         }
         return sendJson(res, 200, { projects, current: connCwd });
       }
-      if (url.pathname === "/api/fs" && req.method === "GET") {
-        const requested = (url.searchParams.get("path") ?? "").trim();
-        if (!requested) return sendJson(res, 200, await fsRoots());
-        return sendJson(res, 200, await browseDir(requested));
+      if (url.pathname === "/api/pick-folder" && req.method === "POST") {
+        // Opens the device's native folder dialog; injectable for tests.
+        return sendJson(res, 200, await (ctx.pickFolder ?? pickFolder)());
       }
       if (url.pathname === "/api/cwd" && req.method === "POST") {
         const body = await readJsonBody(req);

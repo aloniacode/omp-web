@@ -443,6 +443,16 @@ body {
   }
 }
 
+/* Sidebar column resize — suppress text selection while dragging */
+body.sidebar-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+body.sidebar-resizing iframe {
+  pointer-events: none;
+}
+
+
 /* Shiki code blocks (rendered HTML replaces plain <pre>) */
 .shiki-block pre {
   margin: 0.65em 0;

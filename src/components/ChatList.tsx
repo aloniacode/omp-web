@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AssistantMessage, ToolResultMessage } from "../rpc/types";
 import { useActions, useAppStore } from "../state/store";
-import type { ChatEntry } from "../state/store";
+import type { ChatEntry, ToolRun } from "../state/store";
 import { setComposerText } from "../state/composerText";
 import { useI18n } from "../i18n";
-import { assistantText } from "../lib/format";
+import { assistantText, userText } from "../lib/format";
 import { extractPlan } from "../lib/planMode";
 import { MessageView, TurnRow } from "./MessageView";
 import {
@@ -15,6 +15,7 @@ import {
   Copy as IconCopy,
 } from "lucide-react";
 import { ScrollArea } from "./ScrollArea";
+import { ConversationNav, type TurnNavItem } from "./ConversationNav";
 
 const SUGGESTION_KEYS = ["chat.suggestion.1", "chat.suggestion.2", "chat.suggestion.3"] as const;
 
@@ -59,20 +60,34 @@ function EmptyState() {
   );
 }
 
-function AgentWorkingRow() {
+/**
+ * Optimistic agent reply: appears the instant a prompt is dispatched and
+ * bridges the gap until the agent's first real event. Live tool runs that
+ * started before any assistant text (the common first move) render here so
+ * there is never a window with zero feedback.
+ */
+function AgentWorkingRow({ toolRuns }: { toolRuns: ToolRun[] }) {
   const { t } = useI18n();
   return (
     <div className="flex gap-3">
       <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground shadow-sm">
         <IconBot size={15} />
       </div>
-      <div className="flex min-w-0 flex-1 items-center gap-2 pt-1">
-        <span className="flex gap-1">
-          <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:0ms]" />
-          <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:150ms]" />
-          <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:300ms]" />
-        </span>
-        <span className="text-[12.5px] text-zinc-400 dark:text-zinc-500">{t("chat.agentWorking")}</span>
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="inline-flex items-center gap-2 rounded-2xl rounded-tl-md border border-zinc-200 bg-white px-4 py-2.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <span className="flex gap-1">
+            <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:0ms]" />
+            <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:150ms]" />
+            <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:300ms]" />
+          </span>
+          <span className="text-[12.5px] text-zinc-400 dark:text-zinc-500">{t("chat.agentWorking")}</span>
+        </div>
+        {toolRuns.map((run) => (
+          <ToolCard
+            key={run.toolCallId}
+            tool={{ name: run.toolName, args: run.args, status: run.status, outputText: run.outputText }}
+          />
+        ))}
       </div>
     </div>
   );
@@ -86,9 +101,12 @@ function StreamingRow({ resultsByCallId }: { resultsByCallId: Map<string, ToolRe
 }
 
 function WorkingRow() {
-  const active = useAppStore((s) => s.awaitingAgent && s.streamingMsg === null && s.toolRuns.length === 0);
-  if (!active) return null;
-  return <AgentWorkingRow />;
+  // Waiting agent state alone is enough — tool runs that begin before any
+  // assistant text must stay visible, not blank the row out.
+  const awaiting = useAppStore((s) => s.awaitingAgent && s.streamingMsg === null);
+  const toolRuns = useAppStore((s) => s.toolRuns);
+  if (!awaiting) return null;
+  return <AgentWorkingRow toolRuns={toolRuns} />;
 }
 
 /**
@@ -154,6 +172,9 @@ export function ChatList() {
   const hasLiveContent = useAppStore((s) => s.streamingMsg !== null || s.toolRuns.length > 0 || s.awaitingAgent);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  /** Turn wrapper elements keyed by turn key — scroll targets for the nav. */
+  const turnEls = useRef(new Map<string, HTMLDivElement>());
+  const [activeTurnKey, setActiveTurnKey] = useState<string | null>(null);
 
   // Pair committed tool results with their calls for card rendering.
   const resultsByCallId = useMemo(() => {
@@ -172,10 +193,44 @@ export function ChatList() {
   // Committed messages arrive async after the path change (loadAllMessages);
   // a layout effect scrolls after the DOM commit, when scrollHeight is real.
   useLayoutEffect(() => {
-    if (!stickToBottom.current) return;
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (stickToBottom.current && el) el.scrollTop = el.scrollHeight;
+    computeActiveTurn();
   }, [messages, hasLiveContent]);
+
+  // Scroll spy: the nav highlights the turn whose top is nearest the viewport
+  // top (a ~100px band below it), defaulting to the first turn at the very top.
+  const computeActiveTurn = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const vpTop = el.getBoundingClientRect().top;
+    let current: string | null = null;
+    let first: string | null = null;
+    let last: string | null = null;
+    for (const [key, node] of turnEls.current) {
+      if (first === null) first = key;
+      last = key;
+      if (node.getBoundingClientRect().top <= vpTop + 100) current = key;
+    }
+    if (current !== null && el.scrollHeight - el.scrollTop - el.clientHeight < 16) {
+      // Pinned to the bottom: a short trailing turn may not have reached the
+      // spy band yet — highlight it so the bottom position is never nowhere.
+      current = last;
+    }
+    setActiveTurnKey(current ?? first);
+  };
+
+  // Nav click: jump to the turn's wrapper, detaching from follow-the-bottom
+  // so streaming doesn't yank the viewport straight back down.
+  const onNavigate = (key: string) => {
+    stickToBottom.current = false;
+    const el = scrollRef.current;
+    const node = turnEls.current.get(key);
+    if (!el || !node) return;
+    const rect = node.getBoundingClientRect();
+    const vpRect = el.getBoundingClientRect();
+    el.scrollTo({ top: rect.top - vpRect.top + el.scrollTop - 16, behavior: "smooth" });
+  };
 
   // Follow-the-bottom scroll driven by a store subscription: streaming tokens
   // update the DOM without re-rendering the whole committed message list.
@@ -313,11 +368,13 @@ export function ChatList() {
             <TurnRow key={turn.key} user={turn.user} assistants={turn.assistants} resultsByCallId={resultsByCallId} />
           ))}
 
-          <StreamingRow resultsByCallId={resultsByCallId} />
-          <WorkingRow />
-          {planCandidate && <PlanReviewBar plan={planCandidate} />}
-        </div>
-      )}
-    </ScrollArea>
+            <StreamingRow resultsByCallId={resultsByCallId} />
+            <WorkingRow />
+            {planCandidate && <PlanReviewBar plan={planCandidate} />}
+          </div>
+        )}
+      </ScrollArea>
+      <ConversationNav items={navItems} activeKey={activeTurnKey} onNavigate={onNavigate} />
+    </div>
   );
 }
