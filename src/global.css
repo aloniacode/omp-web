@@ -217,6 +217,50 @@
   transform-origin: var(--overlay-origin, bottom);
 }
 
+/* ── Motion tokens ──────────────────────────────────────────────────────────
+ * Exponential easings: surfaces decelerate into place on enter
+ * (--ease-out-expo) and accelerate away on exit (--ease-in-expo, at ~75% of
+ * the enter duration). Exposed as Tailwind ease-out-expo / ease-in-expo. */
+@theme {
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-expo: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+/* Reduced motion: collapse spatial transitions/animations to a short fade.
+ * Functional loops (spinners, caret blink) keep running, just quicker. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 150ms !important;
+    transition-duration: 150ms !important;
+  }
+}
+
+/* ── Todo panel view transition ─────────────────────────────────────────────
+ * The pill ↔ panel morph rides the View Transition API: whichever surface
+ * currently carries `view-transition-name: todo-panel` is captured, and the
+ * group animates its bounds between the old and new snapshots — the browser
+ * measures the pill→panel rectangle difference itself. The root is captured
+ * too (default), so the page stays frozen for the 300ms morph; scoping the
+ * transition to the group alone would let the live panel pop in beneath the
+ * overlay and turn the morph into a double image. The old snapshot (pill)
+ * fades out fast so its content is never seen stretching into the panel;
+ * the new one rides the full morph. Browsers without support (and
+ * reduced-motion users) just swap instantly. */
+::view-transition-group(todo-panel) {
+  animation-duration: 300ms;
+  animation-timing-function: var(--ease-out-expo);
+}
+::view-transition-old(todo-panel) {
+  animation-duration: 120ms;
+  animation-timing-function: var(--ease-in-expo);
+}
+::view-transition-new(todo-panel) {
+  animation-duration: 280ms;
+  animation-timing-function: var(--ease-out-expo);
+}
+
 :root,
 html[data-accent="graphite"] {
   --accent: oklch(0.205 0.006 285.885);
