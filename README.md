@@ -12,6 +12,12 @@ your local `omp` binary; nothing is reimplemented here.
 
 - **Sidebar + conversation layout** — session list (parsed from `~/.omp/agent/sessions`),
   search, new chat, rename, delete, connection status.
+- **Instant session switching** — clicking a session renders its transcript immediately
+  from the on-disk session file (bridge `/api/sessions/transcript`), while the agent's
+  `switch_session` completes in the background. A prompt typed mid-switch is queued and
+  auto-dispatched when the switch lands (restored to the composer if the switch fails);
+  `switch_session` is replayed across agent restarts, so cross-project moves never roll
+  the UI back. Switching to the displayed session is a no-op.
 - **Windowed history** — long sessions render the most recent turns only; scrolling toward
   the top (or the expander button) loads earlier turns with scroll anchoring, so opening a
   huge transcript stays fast.
@@ -32,7 +38,9 @@ your local `omp` binary; nothing is reimplemented here.
   `@` file references stay a separate popup.
 - **Todo panel** — the session's task list (`get_state.todoPhases`, live-updated from
   `todo` tool runs, cleared by `todo_auto_clear`): per-phase progress, status icons
-  (pending / in-progress / completed / abandoned / blocked), collapsible.
+  (pending / in-progress / completed / abandoned / blocked). Starts collapsed to a
+  progress pill and expands into the list panel with a View Transition morph anchored
+  at the pill's corner (browsers without the View Transition API just toggle).
 - **Plan mode** — mirror of omp's `/plan` (plan before executing). Prompts sent in plan mode
   are wrapped in a read-only planning contract that asks for the final plan in a fenced
   block tagged `plan`; the latest turn then gets a review bar with **Approve & implement**
@@ -67,38 +75,116 @@ your local `omp` binary; nothing is reimplemented here.
 
 ## Architecture
 
-```
-browser ──WS /ws──▶ bridge (server/bridge.mjs) ──stdio JSONL──▶ omp --mode rpc --continue
-        ──REST /api──▶ sessions, files, skills, branches, projects/fs/cwd, health, static dist/
+```mermaid
+flowchart LR
+    subgraph browser["Browser — React 19 + zustand"]
+        UI["components (TodoBar, ChatList, Composer…)"]
+        Store["state/store.ts — frame router"]
+        UI <--> Store
+    end
+    subgraph vite["vite dev server (pnpm dev)"]
+        Proxy["/api → :8787 proxy"]
+        Relay["/ws relay"]
+        Plugin["plugins/dev-bridge.ts — bridge lifecycle"]
+    end
+    subgraph bridge["bridge :8787 (server/bridge.mjs)"]
+        HTTP["http-app.mjs — /api routes, auth, static"]
+        Child["RpcChild — one omp per connection & cwd"]
+    end
+    Agent["omp --mode rpc --continue"]
+    Disk[("~/.omp/agent/sessions/*.jsonl")]
+
+    UI -- "REST /api (token + connection id)" --> Proxy --> HTTP
+    Store -- "RPC frames over /ws" --> Relay --> Child
+    Child <--> Agent
+    HTTP -- "transcript & session list (direct read)" --> Disk
+    Agent -- "appends turns" --> Disk
 ```
 
 - **`server/bridge.mjs`** — Node process owning one `omp --mode rpc` child per WebSocket
   connection, with a per-connection working directory (tabs can sit in different projects).
   Negotiates **protocol v2** on the child's `ready` frame, reassembles `rpc_chunk`
   sequences server-side, guards the uplink (origin checks, frame size cap), and forwards
-  clean frames both ways.
+  clean frames both ways. A parent watchdog exits the bridge when its vite dies (raw PID
+  probe + a `/api/bridge/ping` heartbeat, so a recycled Windows PID can't keep an orphan
+  alive).
 - **`server/http-app.mjs`** — the HTTP application (origin guard, all `/api` routes,
   static dist/), testable in isolation via an injected context; service modules beside it:
-  `session-store.mjs` (listing/deletion), `workspace-files.mjs` (@-mention search),
-  `skills.mjs`, `git-branches.mjs`, `scratch.mjs` (oversized-prompt offload),
-  `fs-browse.mjs`, `origin-guard.mjs`, `session-meta.mjs`, `rpc-frame.mjs`.
+  `session-store.mjs` (listing/deletion + `readSessionTranscript` for the fast switch),
+  `workspace-files.mjs` (@-mention search), `skills.mjs`, `git-branches.mjs`,
+  `scratch.mjs` (oversized-prompt offload), `fs-browse.mjs`, `origin-guard.mjs`,
+  `session-meta.mjs`, `rpc-frame.mjs`.
+- **`plugins/dev-bridge.ts`** — vite dev plugin owning the bridge lifecycle: spawns the
+  bridge as a child (killed with the vite tree), heartbeats it every 2s, and on startup
+  **replaces** any port occupant that is orphaned (its vite died) or runs stale server
+  code (fingerprint of `server/*.mjs` exposed via `/api/health`) — a quick close-and-restart
+  never inherits stale bridge behavior. Also relays `/ws` to keep reconnect noise out of
+  the console.
 - **`src/rpc/`** — wire types single-sourced from the `@omp-web/protocol` workspace
-  package + a reconnecting WebSocket RPC client with id correlation and in-flight
-  idempotency coalescing.
+  package + a reconnecting WebSocket RPC client with id correlation, in-flight
+  idempotency coalescing, and replay of read-only (plus `switch_session`) requests
+  across reconnects.
 - **`src/state/store.ts`** — frame router: `message_update` partials → live streaming
   bubble, `tool_execution_*` → tool cards, `goal_updated` → goal banner, terminal
   `agent_end` → transcript reconciliation + stats refresh + optional turn-end notification,
-  `extension_ui_request` → dialog stack.
+  `extension_ui_request` → dialog stack, plus the optimistic session-switch flow
+  (below).
 - **`src/lib/`** — pure, unit-tested helpers: slash-command parsing + palette
   (`slash.ts`), plan-mode contract (`planMode.ts`), goal prompts (`goalMode.ts`),
-  notifications (`notify.ts`), formatting, theme, pins.
+  notifications (`notify.ts`), formatting, theme, pins, idempotency.
+
+### Fast session switching
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant S as store (zustand)
+    participant B as bridge
+    participant D as session .jsonl
+    participant A as omp agent
+
+    U->>S: click session
+    S->>D: GET /api/sessions/transcript
+    D-->>S: messages
+    S->>S: render transcript (instant, ~30ms)
+    Note over S: pending highlight + spinner + queued prompts
+    S->>A: switch_session (replayed across restarts)
+    Note over A: loads the session into context (~1-3s)
+    A-->>S: switch landed
+    S->>S: flush queued prompts, sync state/stats
+```
+
+The transcript on screen comes from the same `.jsonl` the agent reads, so the
+optimistic render matches what the agent later serves. Cross-project switches
+additionally restart the agent child for the target cwd (`POST /api/cwd`);
+`switch_session` is marked replayable, so the in-flight request re-issues against
+the fresh agent instead of failing. If the switch is refused or fails, the previous
+transcript is restored and a queued prompt returns to the composer.
+
+### Dev lifecycle (vite ↔ bridge)
+
+```mermaid
+flowchart TD
+    Start["pnpm dev"] --> Q{"bridge already on :8787?"}
+    Q -- "healthy · fingerprint match · its vite alive" --> Adopt["reuse it + heartbeat"]
+    Q -- "orphan (its vite died)" --> Kill["kill it, spawn fresh"]
+    Q -- "stale fingerprint (server code changed)" --> Kill
+    Q -- "no bridge" --> Spawn["spawn bridge as vite child"]
+    Adopt --> Ping["ping /api/bridge/ping every 2s"]
+    Spawn --> Ping
+    Ping -- "silence > 6s (all vites gone)" --> Exit["bridge exits, port freed"]
+```
 
 ## Usage
 
 ```sh
 pnpm install
-pnpm dev          # bridge on :8787 + vite dev server on :5173 (proxied)
+pnpm dev          # bridge on :8787 + vite dev server on :9527 (proxied)
 ```
+
+The dev lifecycle is self-healing: the bridge runs as a vite child and exits when vite
+dies (heartbeat watchdog, ~6s), and a restarting vite replaces an orphaned or stale-code
+bridge automatically — no need to hunt stray processes after a crash.
 
 Production (single process serves UI + WS + REST):
 
