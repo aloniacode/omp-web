@@ -26,6 +26,8 @@ function buildCtx() {
     sessionsDir,
     maxUplinkBytes: 1024,
     distDir: path.join(tmpRoot, "dist"),
+    // Injected so the native dialog is never opened for real under test.
+    pickFolder: () => pickFolderImpl(),
   };
 }
 

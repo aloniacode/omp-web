@@ -6,7 +6,7 @@ import { setComposerText } from "../state/composerText";
 import { useI18n } from "../i18n";
 import { assistantText, userText } from "../lib/format";
 import { extractPlan } from "../lib/planMode";
-import { MessageView, TurnRow } from "./MessageView";
+import { MessageView, ToolCard, TurnRow } from "./MessageView";
 import {
   Bot as IconBot,
   Check as IconCheck,
@@ -174,6 +174,8 @@ export function ChatList() {
   const stickToBottom = useRef(true);
   /** Turn wrapper elements keyed by turn key — scroll targets for the nav. */
   const turnEls = useRef(new Map<string, HTMLDivElement>());
+  /** Nav target waiting for the window to render it before scrolling. */
+  const pendingNavKey = useRef<string | null>(null);
   const [activeTurnKey, setActiveTurnKey] = useState<string | null>(null);
 
   // Pair committed tool results with their calls for card rendering.
@@ -220,16 +222,30 @@ export function ChatList() {
     setActiveTurnKey(current ?? first);
   };
 
-  // Nav click: jump to the turn's wrapper, detaching from follow-the-bottom
-  // so streaming doesn't yank the viewport straight back down.
-  const onNavigate = (key: string) => {
-    stickToBottom.current = false;
+  /** Scroll a mounted turn's wrapper to the top of the viewport. */
+  const scrollToTurn = (key: string) => {
     const el = scrollRef.current;
     const node = turnEls.current.get(key);
     if (!el || !node) return;
     const rect = node.getBoundingClientRect();
     const vpRect = el.getBoundingClientRect();
     el.scrollTo({ top: rect.top - vpRect.top + el.scrollTop - 16, behavior: "smooth" });
+  };
+
+  // Nav click: jump to the turn's wrapper, detaching from follow-the-bottom
+  // so streaming doesn't yank the viewport straight back down. A target the
+  // history window is still holding back gets the window widened first — the
+  // scroll itself runs from the layout effect below, once the turn is mounted.
+  const onNavigate = (key: string) => {
+    stickToBottom.current = false;
+    const index = turns.findIndex((turn) => turn.key === key);
+    if (index < 0) return;
+    if (index < turns.length - visibleTurns) {
+      pendingNavKey.current = key;
+      setVisibleTurns(turns.length - index);
+      return;
+    }
+    scrollToTurn(key);
   };
 
   // Follow-the-bottom scroll driven by a store subscription: streaming tokens
@@ -295,6 +311,19 @@ export function ChatList() {
     return groups;
   }, [messages]);
 
+  // Nav outline: one node per turn opened by a user message; the title is the
+  // user's own text, whitespace-collapsed and truncated in the node itself.
+  const navItems = useMemo<TurnNavItem[]>(() => {
+    const items: TurnNavItem[] = [];
+    for (const turn of turns) {
+      if (!turn.user) continue;
+      const label = userText(turn.user.content).replace(/\s+/g, " ").trim();
+      if (!label) continue;
+      items.push({ key: turn.key, label });
+    }
+    return items;
+  }, [turns]);
+
   // ── History windowing ────────────────────────────────────────────────────
   // Long sessions keep every message in memory but render only the most
   // recent turns; scrolling toward the top (or the explicit button) grows the
@@ -337,10 +366,21 @@ export function ChatList() {
     el.scrollTop += el.scrollHeight - anchor;
   }, [visibleTurns]);
 
+  // A nav click on a turn the window was holding back lands here once the
+  // widened window has committed it to the DOM.
+  useLayoutEffect(() => {
+    const key = pendingNavKey.current;
+    if (!key) return;
+    pendingNavKey.current = null;
+    scrollToTurn(key);
+  }, [visibleTurns]);
+
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
     stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+    // Scroll spy: keep the nav highlight tracking the in-view turn.
+    computeActiveTurn();
     if (el.scrollTop < EXPAND_SCROLL_THRESHOLD) expandWindow();
   };
 
@@ -349,25 +389,38 @@ export function ChatList() {
   const renderedTurns = turns.slice(windowStart);
 
   return (
-    <ScrollArea className="min-h-0 flex-1" viewportClassName="px-4 py-5 sm:px-6" onScroll={onScroll} viewportRef={scrollRef}>
-      {!hasContent ? (
-        <EmptyState />
-      ) : (
-        <div className="mx-auto flex max-w-3xl flex-col gap-5">
-          {hiddenMessages > 0 && (
-            <button
-              type="button"
-              onClick={expandWindow}
-              className="mx-auto flex cursor-pointer items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-[12px] text-zinc-500 shadow-sm transition-colors hover:border-accent hover:text-accent dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-accent dark:hover:text-accent"
-            >
-              <IconChevronUp size={13} />
-              {t("chat.earlier", { n: hiddenMessages })}
-            </button>
-          )}
-          {renderedTurns.map((turn) => (
-            <TurnRow key={turn.key} user={turn.user} assistants={turn.assistants} resultsByCallId={resultsByCallId} />
-          ))}
-
+    <div className="relative min-h-0 flex-1">
+      <ScrollArea className="h-full" viewportClassName="px-4 py-5 sm:px-6" onScroll={onScroll} viewportRef={scrollRef}>
+        {!hasContent ? (
+          <EmptyState />
+        ) : (
+          <div className="mx-auto flex max-w-3xl flex-col gap-5">
+            {hiddenMessages > 0 && (
+              <button
+                type="button"
+                onClick={expandWindow}
+                className="mx-auto flex cursor-pointer items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-[12px] text-zinc-500 shadow-sm transition-colors hover:border-accent hover:text-accent dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-accent dark:hover:text-accent"
+              >
+                <IconChevronUp size={13} />
+                {t("chat.earlier", { n: hiddenMessages })}
+              </button>
+            )}
+            {renderedTurns.map((turn) => (
+              <div
+                key={turn.key}
+                ref={
+                  turn.user
+                    ? (node) => {
+                        if (node) turnEls.current.set(turn.key, node);
+                        else turnEls.current.delete(turn.key);
+                      }
+                    : undefined
+                }
+                className="flex flex-col gap-5"
+              >
+                <TurnRow user={turn.user} assistants={turn.assistants} resultsByCallId={resultsByCallId} />
+              </div>
+            ))}
             <StreamingRow resultsByCallId={resultsByCallId} />
             <WorkingRow />
             {planCandidate && <PlanReviewBar plan={planCandidate} />}

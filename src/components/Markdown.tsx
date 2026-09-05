@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Check as IconCheck, Copy as IconCopy } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { highlightCode } from "../lib/highlighter";
 import { useTheme } from "../lib/theme";
+import { useI18n } from "../i18n";
 import { CopyButton } from "./CopyButton";
 
 /** Extract the raw text + language from a markdown <code> child of <pre>. */
@@ -20,38 +20,8 @@ function codeInfo(children: ReactNode): { code: string; lang: string } {
   return { code: "", lang: "" };
 }
 
-/** Copy affordance pinned to the block's top-right corner; icon flips on success. */
-function CopyButton({ code }: { code: string }) {
-  const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-      window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // clipboard unavailable (permissions / insecure context) — ignore
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={() => void copy()}
-      title={copied ? t("message.codeCopied") : t("message.copyCode")}
-      aria-label={copied ? t("message.codeCopied") : t("message.copyCode")}
-      className="absolute right-2 top-2 z-10 rounded-md border border-zinc-200 bg-white/90 p-1.5 text-zinc-400 opacity-0 shadow-sm backdrop-blur transition-opacity hover:text-accent focus-visible:opacity-100 group-hover/code:opacity-100 dark:border-zinc-700 dark:bg-zinc-900/90 dark:text-zinc-500 dark:hover:text-accent"
-    >
-      {copied ? <IconCheck size={13} className="text-emerald-500" /> : <IconCopy size={13} />}
-    </button>
-  );
-}
-
 function CodeBlock({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
   const { resolved } = useTheme();
   const { code, lang } = useMemo(() => codeInfo(children), [children]);
   const [html, setHtml] = useState<string | null>(null);
@@ -78,6 +48,7 @@ function CodeBlock({ children }: { children: ReactNode }) {
       )}
       <CopyButton
         text={code}
+        title={t("message.copyCode")}
         className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
       />
     </div>
