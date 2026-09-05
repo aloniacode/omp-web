@@ -39,7 +39,9 @@ export function GoalBar() {
   };
 
   return (
-    <div className="mx-auto mt-3 max-w-3xl px-4 sm:px-6">
+    // w-full keeps the banner stretched to max-w-3xl: without it the auto
+    // side margins (flex child of <main>) shrink-wrap the panel to its text.
+    <div className="mx-auto mt-3 w-full max-w-3xl px-4 sm:px-6">
       <div className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
           <IconFlag size={14} />

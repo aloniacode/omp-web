@@ -57,7 +57,10 @@ export function TodoBar() {
   const { done, total } = todoProgress(todos);
 
   return (
-    <div className="mx-auto mt-3 max-w-3xl px-4 sm:px-6">
+    // w-full: as a flex child of <main>, `mx-auto` alone would disable the
+    // flex stretch and shrink-wrap the panel to its content width — let it
+    // fill max-w-3xl so it stays aligned with the chat column below.
+    <div className="mx-auto mt-3 w-full max-w-3xl px-4 sm:px-6">
       <div className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
         <button
           type="button"
