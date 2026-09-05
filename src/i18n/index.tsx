@@ -174,6 +174,8 @@ export const messages = {
     "notice.handoffStreaming": "Cannot hand off while the agent is responding",
     "notice.handoffRunning": "Handoff already in progress",
     "notice.projectSwitched": "Switched project: {cwd} — reconnecting agent…",
+    "notice.switchCancelled": "Session switch was cancelled — the agent kept the current session",
+    "notice.newSessionCancelled": "New session was cancelled — the agent kept the current session",
     "notice.exported": "Transcript exported",
     "notice.exportedTo": "Exported: {path}",
 
@@ -490,6 +492,8 @@ export const messages = {
     "notice.handoffStreaming": "智能体响应期间无法交接",
     "notice.handoffRunning": "交接已在进行中",
     "notice.projectSwitched": "已切换项目：{cwd} — 正在重连智能体…",
+    "notice.switchCancelled": "会话切换被取消 —— 智能体仍保留当前会话",
+    "notice.newSessionCancelled": "新建会话被取消 —— 智能体仍保留当前会话",
     "notice.exported": "对话已导出",
     "notice.exportedTo": "已导出：{path}",
   },

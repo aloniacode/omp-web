@@ -199,6 +199,14 @@ export function isOptimistic(entry: ChatEntry): entry is OptimisticUserMessage {
   return "pending" in entry || "failed" in entry;
 }
 
+const IS_WINDOWS = /^win/i.test(navigator.platform);
+
+/** Loose directory equality: Windows paths differ trivially in separators and case. */
+function sameDirectory(a: string, b: string): boolean {
+  const norm = (p: string) => p.replace(/[\\/]+/g, "/").replace(/\/+$/, "");
+  return IS_WINDOWS ? norm(a).toLowerCase() === norm(b).toLowerCase() : norm(a) === norm(b);
+}
+
 /** Shared streaming predicate: agent-reported state or a live streaming bubble. */
 export function selectIsStreaming(state: AppState): boolean {
   return Boolean(state.agentState?.isStreaming) || state.streamingMsg !== null;
@@ -301,6 +309,48 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       })
       .catch(() => undefined);
   };
+
+  /** Move this connection (and its agent child) to a project directory. */
+  const requestCwdSwitch = async (cwd: string) => {
+    const res = await apiFetch("/api/cwd", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cwd }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; cwd?: string; changed?: boolean; error?: string };
+    if (!res.ok || !body.ok) throw new Error(body.error ?? `switch failed (${res.status})`);
+    set({ projectCwd: body.cwd ?? cwd });
+    return body;
+  };
+
+  /**
+   * Wait for the agent child a cwd switch just recycled to come back: the
+   * dispose closes the socket and the reconnect loop spawns the replacement.
+   * Two phases, because `agentReady` stays stale-true during the drop — it is
+   * only reset once the fresh socket reports "connected".
+   */
+  const waitAgentRestart = (timeoutMs = 20_000) =>
+    new Promise<void>((resolve, reject) => {
+      const deadline = Date.now() + timeoutMs;
+      let dropped = false;
+      const tick = () => {
+        const { connStatus, agentReady } = get();
+        if (dropped) {
+          if (connStatus === "connected" && agentReady) {
+            resolve();
+            return;
+          }
+        } else if (connStatus !== "connected" || !agentReady) {
+          dropped = true;
+        }
+        if (Date.now() > deadline) {
+          reject(new Error("agent restart timed out"));
+          return;
+        }
+        setTimeout(tick, 100);
+      };
+      tick();
+    });
 
   /**
    * Shared health probe. A 401 flips `authRequired` (token gate) on. When a
@@ -630,6 +680,17 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       }
       case "new_session":
       case "switch_session":
+        // success with `cancelled: true` means the agent refused the change
+        // (session_before_switch hook, cwd guard) and kept the current
+        // session — wiping the transcript here would blank the UI for a
+        // switch that never happened.
+        if ((resp.data as { cancelled?: boolean } | undefined)?.cancelled === true) {
+          addNotice(
+            "warning",
+            storeT(resp.command === "new_session" ? "notice.newSessionCancelled" : "notice.switchCancelled"),
+          );
+          break;
+        }
         if (resp.success) {
           set({
             messages: [],
@@ -643,6 +704,11 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
             goal: null,
             todos: [],
             handoffInFlight: false,
+            // Identity resets too: the fresh session's get_state fills these
+            // back in, and an unnamed session must not inherit the previous
+            // session's title in the top bar.
+            sessionId: null,
+            sessionName: null,
           });
           void initSession();
         }
@@ -795,7 +861,27 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     },
 
     openSession(path: string) {
-      client.request({ type: "switch_session", sessionPath: path }).catch((err: unknown) => fail(err, "open session"));
+      // The agent only switches into sessions recorded under its own working
+      // directory — anything else it cancels silently (success:true, no
+      // switch). Sessions from another project need the connection moved to
+      // that project first, and the replacement agent up, before switching.
+      const targetCwd = get().sessions.find((session) => session.path === path)?.cwd ?? null;
+      const currentCwd = get().projectCwd;
+      if (!targetCwd || !currentCwd || sameDirectory(targetCwd, currentCwd)) {
+        client.request({ type: "switch_session", sessionPath: path }).catch((err: unknown) => fail(err, "open session"));
+        return;
+      }
+      void requestCwdSwitch(targetCwd)
+        .then(async (body) => {
+          if (body.changed) {
+            addNotice("info", storeT("notice.projectSwitched", { cwd: body.cwd ?? targetCwd }));
+            await waitAgentRestart();
+          }
+          await client.request({ type: "switch_session", sessionPath: path });
+          refreshProjects();
+          refreshSessions();
+        })
+        .catch((err: unknown) => fail(err, "open session"));
     },
 
     renameSession(name: string) {
@@ -887,15 +973,8 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     refreshProjects,
 
     switchProject(cwd: string) {
-      apiFetch("/api/cwd", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ cwd }),
-      })
-        .then(async (res) => {
-          const body = (await res.json().catch(() => ({}))) as { ok?: boolean; cwd?: string; changed?: boolean; error?: string };
-          if (!res.ok || !body.ok) throw new Error(body.error ?? `switch failed (${res.status})`);
-          set({ projectCwd: body.cwd ?? cwd });
+      requestCwdSwitch(cwd)
+        .then((body) => {
           if (body.changed) {
             // Bridge disposed the agent child; the socket drops and the
             // retry loop respawns it in the new directory.
