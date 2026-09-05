@@ -27,6 +27,7 @@ import { FrameAssembler } from "./rpc-frame.mjs";
 import { isAllowedOrigin } from "./origin-guard.mjs";
 import { createHttpApp } from "./http-app.mjs";
 import { resolveBridgeToken, verifyToken, TOKEN_FILE } from "./auth-token.mjs";
+import { computeServerFingerprint } from "./server-fingerprint.mjs";
 import { NEGOTIATED_MAX_REASSEMBLED_BYTES, PROTOCOL_REQUEST_ID, PROTOCOL_VERSION, hasType } from "@omp-web/protocol";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -65,6 +66,7 @@ function isAuthorized(req, url) {
 
 class RpcChild {
   constructor(cwd, onFrame, onExit, log) {
+    this.cwd = cwd;
     this.onFrame = onFrame;
     this.onExit = onExit;
     this.log = log;
@@ -196,6 +198,14 @@ const children = new Set();
 /** Active browser connections: id → { cwd, child } for connection-scoped cwd. */
 const connections = new Map();
 
+/** Vite dev-server pid (0 when started via `pnpm bridge`). Drives the parent
+ *  watchdog and the pid/ppid fields on /api/health. */
+const parentPid = Number(process.env.OMP_PARENT_PID ?? 0);
+/** Last /api/bridge/ping from the parent — the watchdog exits when this goes
+ *  quiet even if the raw pid probe still answers (Windows PID reuse). */
+let lastParentPing = Date.now();
+const serverFingerprint = computeServerFingerprint();
+
 const handleHttp = createHttpApp({
   ompBin: OMP_BIN,
   getDefaultCwd: () => ompCwd,
@@ -207,6 +217,11 @@ const handleHttp = createHttpApp({
   sessionsDir: SESSIONS_DIR,
   maxUplinkBytes: MAX_UPLINK_BYTES,
   distDir: DIST_DIR,
+  ompParentPid: parentPid,
+  serverFingerprint,
+  noteParentPing: () => {
+    lastParentPing = Date.now();
+  },
   checkAuth: isAuthorized,
 });
 
@@ -351,9 +366,11 @@ for (const sig of ["SIGINT", "SIGTERM"]) {
 /**
  * Parent watchdog: when spawned by the vite dev server (OMP_PARENT_PID),
  * exit if the parent dies so a hard-killed vite never leaves an orphaned
- * bridge holding the port.
+ * bridge holding the port. Two independent signals, whichever fires first:
+ * the raw parent-PID probe, and the vite heartbeat on /api/bridge/ping —
+ * the heartbeat is the reliable one on Windows, where a recycled PID can
+ * keep the probe answering after the real parent is long gone.
  */
-const parentPid = Number(process.env.OMP_PARENT_PID ?? 0);
 if (parentPid > 0) {
   const watchdog = setInterval(() => {
     let alive = true;
@@ -362,11 +379,15 @@ if (parentPid > 0) {
     } catch {
       alive = false;
     }
-    if (!alive) {
+    const pingSilent = Date.now() - lastParentPing > 6000;
+    if (!alive || pingSilent) {
       clearInterval(watchdog);
+      console.log(
+        `[bridge] parent vite gone (${!alive ? `pid ${parentPid} exited` : "heartbeat silent"}) — shutting down`,
+      );
       for (const child of children) child.dispose(true);
-      setTimeout(() => process.exit(0), 1000);
+      setTimeout(() => process.exit(0), 500);
     }
-  }, 2000);
+  }, 1000);
   watchdog.unref();
 }
