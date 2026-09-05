@@ -63,15 +63,22 @@ export function TodoBar() {
   return (
     // Absolute overlay anchored to the chat area's top-right corner; the
     // outer layer is click-through so messages under the empty margin stay
-    // interactive. The expanded list scrolls internally under a height cap.
+    // interactive.
     <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-end px-3 pt-3 sm:px-4">
-      <div className="pointer-events-auto w-64 max-w-[calc(100%-1.5rem)] rounded-xl border border-zinc-200 bg-white/95 shadow-lg backdrop-blur-sm dark:border-zinc-700 dark:bg-zinc-900/95">
+      {/* w-fit: the collapsed pill hugs its content like a button. The list
+          below unfolds with a grid-rows + width + scale transition anchored
+          at the top-right corner, so expanding grows toward the bottom-left. */}
+      <div
+        className={`pointer-events-auto max-w-[calc(100%-1.5rem)] border border-zinc-200 bg-white/95 shadow-lg backdrop-blur-sm transition-[border-radius] duration-200 dark:border-zinc-700 dark:bg-zinc-900/95 ${
+          expanded ? "rounded-xl" : "rounded-full"
+        }`}
+      >
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
           title={expanded ? t("todo.collapse") : t("todo.expand")}
-          className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left"
+          className="flex w-full cursor-pointer items-center gap-2.5 rounded-[inherit] px-3 py-1.5 text-left transition-colors hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50"
         >
           <div className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
             <IconListTodo size={13} />
@@ -105,24 +112,35 @@ export function TodoBar() {
             className={`shrink-0 text-zinc-400 transition-transform ${expanded ? "" : "-rotate-90"}`}
           />
         </button>
-        {expanded && (
-          <div className="max-h-[min(60vh,26rem)] space-y-2.5 overflow-y-auto border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
-            {todos.map((phase, phaseIndex) => (
-              <div key={`${phase.name}:${phaseIndex}`}>
-                {phase.name && (
-                  <p className="mb-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                    {phase.name}
-                  </p>
-                )}
-                <ul>
-                  {phase.tasks.map((task, taskIndex) => (
-                    <TaskRow key={`${task.content}:${taskIndex}`} task={task} />
-                  ))}
-                </ul>
+        {/* 0fr→1fr collapses the row; the inner width clip (w-0↔w-64) keeps the
+            hidden list from forcing the pill wide. Scaling from origin-top-right
+            sells the "grows out of the pill's corner" motion. */}
+        <div
+          className={`grid origin-top-right transition-[grid-template-rows,opacity,transform] duration-200 ease-out ${
+            expanded ? "grid-rows-[1fr] scale-100 opacity-100" : "grid-rows-[0fr] scale-95 opacity-0"
+          }`}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className={`overflow-hidden transition-[width] duration-200 ease-out ${expanded ? "w-64" : "w-0"}`}>
+              <div className="max-h-[min(60vh,26rem)] w-64 space-y-2.5 overflow-y-auto border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
+                {todos.map((phase, phaseIndex) => (
+                  <div key={`${phase.name}:${phaseIndex}`}>
+                    {phase.name && (
+                      <p className="mb-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                        {phase.name}
+                      </p>
+                    )}
+                    <ul>
+                      {phase.tasks.map((task, taskIndex) => (
+                        <TaskRow key={`${task.content}:${taskIndex}`} task={task} />
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
