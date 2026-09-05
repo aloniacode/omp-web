@@ -114,6 +114,8 @@ export const messages = {
 
     "todo.title": "Todos",
     "todo.progress": "{done}/{total} done",
+    "todo.expand": "Show task list",
+    "todo.collapse": "Hide task list",
     "composer.usageTotal": "{tokens} tokens",
     "composer.usageCost": "estimated conversation cost",
     "composer.usageContext": "Context: {used} / {window} tokens ({percent})",
@@ -360,6 +362,8 @@ export const messages = {
 
     "todo.title": "任务清单",
     "todo.progress": "{done}/{total} 已完成",
+    "todo.expand": "展开任务清单",
+    "todo.collapse": "收起任务清单",
     "composer.usageTotal": "{tokens} tokens",
     "composer.usageCost": "对话预估费用",
     "composer.usageContext": "上下文：{used} / {window} tokens（{percent}）",

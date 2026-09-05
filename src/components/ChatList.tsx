@@ -15,6 +15,7 @@ import {
   Copy as IconCopy,
 } from "lucide-react";
 import { ScrollArea } from "./ScrollArea";
+import { TodoBar } from "./TodoBar";
 import { ConversationNav, type TurnNavItem } from "./ConversationNav";
 
 const SUGGESTION_KEYS = ["chat.suggestion.1", "chat.suggestion.2", "chat.suggestion.3"] as const;
@@ -427,6 +428,10 @@ export function ChatList() {
           </div>
         )}
       </ScrollArea>
+      {/* Chat-area overlays: the floating todo panel (top-right) and the
+          conversation quick nav (left rail). Both float — neither takes
+          layout space from the transcript. */}
+      <TodoBar />
       <ConversationNav items={navItems} activeKey={activeTurnKey} onNavigate={onNavigate} />
     </div>
   );
