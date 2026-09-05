@@ -35,6 +35,22 @@ function applyAccent(accent: string) {
   document.documentElement.dataset.accent = accent;
 }
 
+/**
+ * Apply the persisted theme + accent once at startup, before the first
+ * render. `useTheme` only mounts inside the settings dialog and code blocks,
+ * so without this the `data-accent` attribute (and with it the dark-mode
+ * accent palette) is missing until one of those happens — accent-colored
+ * surfaces render with the light-mode fallback tokens on dark backgrounds.
+ */
+export function initTheme() {
+  const storedTheme = localStorage.getItem(STORAGE_KEY);
+  const pref: ThemePref =
+    storedTheme === "light" || storedTheme === "dark" || storedTheme === "system" ? storedTheme : "dark";
+  apply(resolve(pref));
+  const storedAccent = localStorage.getItem(ACCENT_KEY);
+  applyAccent(storedAccent && ACCENTS.some((preset) => preset.id === storedAccent) ? storedAccent : "graphite");
+}
+
 /** Light/dark/system preference + accent preset, persisted, applied to <html>. */
 export function useTheme() {
   const [pref, setPref] = useState<ThemePref>(() => {
