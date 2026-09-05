@@ -45,25 +45,27 @@ function TaskRow({ task }: { task: TodoItem }) {
  * Session todo panel: the agent's task list from todo-tool runs and get_state
  * snapshots (`todo_auto_clear` empties it). Hidden entirely while no todos
  * exist. Floats at the top-right of the chat area as an overlay — the
- * transcript keeps the full height and scrolls beneath it; collapsing turns
- * the panel into a compact pill so a long list never crowds the chat.
+ * transcript keeps the full height and scrolls beneath it. Starts collapsed
+ * to a compact pill that only summarizes where the work stands (progress
+ * counts plus the step being worked, if any); expanding shows the full list.
  */
 export function TodoBar() {
   const { t } = useI18n();
   const todos = useAppStore((s) => s.todos);
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   // Hidden while empty; upstream `todo rm` can leave named phases with no
   // tasks — nothing left to show then, either.
   if (todos.length === 0 || todoProgress(todos).total === 0) return null;
   const { done, total } = todoProgress(todos);
+  const currentStep = todos.flatMap((phase) => phase.tasks).find((task) => task.status === "in_progress");
 
   return (
     // Absolute overlay anchored to the chat area's top-right corner; the
     // outer layer is click-through so messages under the empty margin stay
     // interactive. The expanded list scrolls internally under a height cap.
     <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-end px-3 pt-3 sm:px-4">
-      <div className="pointer-events-auto w-80 max-w-[calc(100%-1.5rem)] rounded-xl border border-zinc-200 bg-white/95 shadow-lg backdrop-blur-sm dark:border-zinc-700 dark:bg-zinc-900/95">
+      <div className="pointer-events-auto w-64 max-w-[calc(100%-1.5rem)] rounded-xl border border-zinc-200 bg-white/95 shadow-lg backdrop-blur-sm dark:border-zinc-700 dark:bg-zinc-900/95">
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
@@ -74,12 +76,30 @@ export function TodoBar() {
           <div className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
             <IconListTodo size={13} />
           </div>
-          <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-zinc-800 dark:text-zinc-100">
-            {t("todo.title")}
-          </span>
-          <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[10.5px] font-semibold text-zinc-500 tabular-nums dark:bg-zinc-800 dark:text-zinc-400">
-            {t("todo.progress", { done, total })}
-          </span>
+          {expanded ? (
+            <>
+              <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-zinc-800 dark:text-zinc-100">
+                {t("todo.title")}
+              </span>
+              <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[10.5px] font-semibold text-zinc-500 tabular-nums dark:bg-zinc-800 dark:text-zinc-400">
+                {t("todo.progress", { done, total })}
+              </span>
+            </>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-600 dark:text-zinc-300">
+              {currentStep ? (
+                <>
+                  <span className="tabular-nums text-zinc-400 dark:text-zinc-500">
+                    {t("todo.progress", { done, total })}
+                  </span>
+                  <span className="text-zinc-300 dark:text-zinc-600"> · </span>
+                  {currentStep.content}
+                </>
+              ) : (
+                t("todo.progress", { done, total })
+              )}
+            </span>
+          )}
           <IconChevronDown
             size={14}
             className={`shrink-0 text-zinc-400 transition-transform ${expanded ? "" : "-rotate-90"}`}
