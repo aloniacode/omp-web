@@ -161,12 +161,15 @@ function SaveButton({ label, onClick }: { label: string; onClick: () => void }) 
 function SessionItem({
   session,
   active,
+  pending,
   pinned,
   onRename,
   onDelete,
 }: {
   session: SessionMeta;
   active: boolean;
+  /** A switch_session to this session is in flight (agent load takes seconds). */
+  pending: boolean;
   pinned: boolean;
   onRename: (s: SessionMeta) => void;
   onDelete: (s: SessionMeta) => void;
@@ -179,9 +182,10 @@ function SessionItem({
     hoursAgo: t("time.hoursAgo"),
     daysAgo: t("time.daysAgo"),
   });
+  const highlight = active || pending;
   return (
     <div
-      className={`group relative flex items-center rounded-lg ${active ? "bg-accent/10 dark:bg-accent/15" : "hover:bg-zinc-200/60 dark:hover:bg-zinc-800/70"}`}
+      className={`group relative flex items-center rounded-lg ${highlight ? "bg-accent/10 dark:bg-accent/15" : "hover:bg-zinc-200/60 dark:hover:bg-zinc-800/70"}`}
     >
       {/* Pin toggle lives at the very front, always visible when pinned */}
       <button
@@ -200,9 +204,15 @@ function SessionItem({
         className="min-w-0 flex-1 px-1.5 py-2 pr-14 text-left"
       >
         <span
-          className={`block truncate text-[13.5px] font-medium ${active ? "text-accent" : "text-zinc-700 dark:text-zinc-200"}`}
+          className={`flex min-w-0 items-center gap-1.5 truncate text-[13.5px] font-medium ${highlight ? "text-accent" : "text-zinc-700 dark:text-zinc-200"}`}
         >
-          {title}
+          {pending && (
+            <span
+              className="inline-block size-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent"
+              aria-hidden
+            />
+          )}
+          <span className="truncate">{title}</span>
         </span>
         <span className="mt-0.5 block truncate text-[11.5px] text-zinc-400 dark:text-zinc-500">{sub}</span>
       </button>
@@ -233,6 +243,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   const actions = useActions();
   const sessions = useAppStore((s) => s.sessions);
   const activePath = useAppStore((s) => s.activePath);
+  const pendingSessionPath = useAppStore((s) => s.pendingSessionPath);
   const agentReady = useAppStore((s) => s.agentReady);
   const pinned = usePinned();
   const [query, setQuery] = useState("");
@@ -442,6 +453,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                     key={session.path}
                     session={session}
                     active={session.path === activePath}
+                    pending={session.path === pendingSessionPath && session.path !== activePath}
                     pinned={pinned.includes(session.path)}
                     onRename={setRenaming}
                     onDelete={setDeleting}

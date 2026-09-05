@@ -10,6 +10,13 @@
  * - sessionsDir:       ~/.omp/agent/sessions
  * - maxUplinkBytes:    transport limit shared with /api/scratch
  * - distDir:           built frontend served as static files
+ * - ompParentPid:      vite dev-server pid that spawned the bridge (0 when
+ *                      started manually) — surfaced via /api/health so the
+ *                      plugin can tell a live bridge from an orphan
+ * - serverFingerprint: digest of the server modules — the plugin's restart
+ *                      decision compares it against its own computation
+ * - noteParentPing:    called by /api/bridge/ping (the vite heartbeat) to
+ *                      record that the parent dev server is still alive
  * - checkAuth:         (req, url) => boolean for the bridge access token;
  *                      absent means auth is disabled (tests, OMP_WEB_TOKEN=off)
  */
@@ -18,7 +25,7 @@ import path from "node:path";
 import { isAllowedOrigin } from "./origin-guard.mjs";
 import { searchFiles } from "./workspace-files.mjs";
 import { listSkills } from "./skills.mjs";
-import { listSessions, deleteSessionFile } from "./session-store.mjs";
+import { listSessions, deleteSessionFile, readSessionTranscript } from "./session-store.mjs";
 import { listBranches, checkoutBranch } from "./git-branches.mjs";
 import { writeScratchFile } from "./scratch.mjs";
 import { whichExecutable } from "./fs-browse.mjs";
@@ -74,10 +81,22 @@ export function createHttpApp(ctx) {
     try {
       if (url.pathname === "/api/health") {
         const found = whichExecutable(ctx.ompBin);
+        ctx.noteParentPing?.();
         return sendJson(res, 200, {
           ok: true,
+          pid: process.pid,
+          ppid: ctx.ompParentPid ?? null,
+          fingerprint: ctx.serverFingerprint ?? null,
           omp: { bin: ctx.ompBin, resolved: found, cwd: ctx.getDefaultCwd() },
         });
+      }
+      if (url.pathname === "/api/bridge/ping" && req.method === "GET") {
+        // Vite dev-server heartbeat. Silence past the watchdog window means
+        // the parent is gone and the bridge exits (bridge.mjs watchdog) —
+        // unlike a raw parent-PID probe this survives Windows PID reuse,
+        // because a recycled PID answers the probe but never heartbeats.
+        ctx.noteParentPing?.();
+        return sendJson(res, 200, { ok: true });
       }
       if (url.pathname === "/api/files" && req.method === "GET") {
         const query = url.searchParams.get("q") ?? "";
@@ -119,6 +138,18 @@ export function createHttpApp(ctx) {
         const target = url.searchParams.get("path") ?? (await readJsonBody(req)).path;
         if (!target) return sendJson(res, 400, { error: "missing path" });
         return sendJson(res, 200, await deleteSessionFile(ctx.sessionsDir, target));
+      }
+      if (url.pathname === "/api/sessions/transcript" && req.method === "GET") {
+        // Direct-from-disk transcript: lets the UI render a conversation
+        // while the agent's switch_session is still loading it.
+        const target = url.searchParams.get("path") ?? "";
+        if (!target) return sendJson(res, 400, { error: "missing path" });
+        try {
+          return sendJson(res, 200, { messages: await readSessionTranscript(ctx.sessionsDir, target) });
+        } catch (err) {
+          const status = err?.status ?? 500;
+          return sendJson(res, status, { error: String(err?.message ?? err) });
+        }
       }
       if (url.pathname === "/api/projects" && req.method === "GET") {
         // Distinct session cwds, plus the calling connection's working directory.

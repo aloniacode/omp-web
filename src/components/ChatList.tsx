@@ -171,6 +171,12 @@ export function ChatList() {
   const planMode = useAppStore((s) => s.planMode);
   const planModeFromIndex = useAppStore((s) => s.planModeFromIndex);
   const hasLiveContent = useAppStore((s) => s.streamingMsg !== null || s.toolRuns.length > 0 || s.awaitingAgent);
+  // A switch is in flight (agent load can take seconds) and targets a
+  // different session than the one on screen — replace the stale transcript
+  // with a loading state so the wait reads as progress, not a freeze.
+  const switching = useAppStore(
+    (s) => s.pendingSessionPath !== null && s.pendingSessionPath !== s.activePath,
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   /** Turn wrapper elements keyed by turn key — scroll targets for the nav. */
@@ -392,7 +398,16 @@ export function ChatList() {
   return (
     <div className="relative min-h-0 flex-1">
       <ScrollArea className="h-full" viewportClassName="px-4 py-5 sm:px-6" onScroll={onScroll} viewportRef={scrollRef}>
-        {!hasContent ? (
+        {switching ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3">
+            <span
+              className="size-6 animate-spin rounded-full border-2 border-accent border-t-transparent"
+              role="status"
+              aria-label={t("chat.opening")}
+            />
+            <p className="text-[12.5px] text-zinc-500 dark:text-zinc-400">{t("chat.opening")}</p>
+          </div>
+        ) : !hasContent ? (
           <EmptyState />
         ) : (
           <div className="mx-auto flex max-w-3xl flex-col gap-5">

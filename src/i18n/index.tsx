@@ -83,6 +83,7 @@ export const messages = {
 
     "chat.agentWorking": "Agent is thinking…",
     "chat.earlier": "{n} earlier messages — click to load",
+    "chat.opening": "Opening conversation…",
     "chat.suggestion.1": "Explain this codebase",
     "chat.suggestion.2": "Find and fix failing tests",
     "chat.suggestion.3": "Review uncommitted changes",
@@ -176,6 +177,8 @@ export const messages = {
     "notice.handoffStreaming": "Cannot hand off while the agent is responding",
     "notice.handoffRunning": "Handoff already in progress",
     "notice.projectSwitched": "Switched project: {cwd} — reconnecting agent…",
+    "notice.promptQueued": "Still switching sessions — your message will send automatically once it lands.",
+    "notice.queuedPromptBack": "Session switch failed — your message is back in the composer.",
     "notice.switchCancelled": "Session switch was cancelled — the agent kept the current session",
     "notice.newSessionCancelled": "New session was cancelled — the agent kept the current session",
     "notice.exported": "Transcript exported",
@@ -331,6 +334,7 @@ export const messages = {
 
     "chat.agentWorking": "智能体思考中…",
     "chat.earlier": "还有 {n} 条更早的消息 — 点击加载",
+    "chat.opening": "正在打开会话…",
     "chat.suggestion.1": "解释这个代码库",
     "chat.suggestion.2": "查找并修复失败的测试",
     "chat.suggestion.3": "审查未提交的更改",
@@ -496,6 +500,8 @@ export const messages = {
     "notice.handoffStreaming": "智能体响应期间无法交接",
     "notice.handoffRunning": "交接已在进行中",
     "notice.projectSwitched": "已切换项目：{cwd} — 正在重连智能体…",
+    "notice.promptQueued": "正在切换会话 —— 消息将在切换完成后自动发送。",
+    "notice.queuedPromptBack": "会话切换失败 —— 你的消息已放回输入框。",
     "notice.switchCancelled": "会话切换被取消 —— 智能体仍保留当前会话",
     "notice.newSessionCancelled": "新建会话被取消 —— 智能体仍保留当前会话",
     "notice.exported": "对话已导出",

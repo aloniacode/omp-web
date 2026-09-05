@@ -37,8 +37,11 @@ export const NON_IDEMPOTENT_COMMANDS: ReadonlySet<string> = new Set([
 /**
  * Read-only commands safe to re-send after a reconnect: a fresh agent child
  * knows nothing of the dropped socket's in-flight requests, and these answer
- * identically from the reloaded session. Anything state-advancing is NOT
- * replayed — its caller gets the connection-lost error instead.
+ * identically from the reloaded session. `switch_session` is also replayed:
+ * it targets a session under the connection's (already switched) cwd, so
+ * re-issuing it to the fresh agent child is exactly the recovery the caller
+ * wants — dropping it would roll back an in-flight session switch. Anything
+ * else state-advancing is NOT replayed.
  */
 export const REPLAYABLE_COMMANDS: ReadonlySet<string> = new Set([
   "get_state",
@@ -46,6 +49,7 @@ export const REPLAYABLE_COMMANDS: ReadonlySet<string> = new Set([
   "get_available_models",
   "get_messages",
   "get_messages_page",
+  "switch_session",
 ]);
 
 export function isReplayable(command: RpcCommand): boolean {

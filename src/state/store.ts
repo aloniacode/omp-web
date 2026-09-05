@@ -88,6 +88,13 @@ export interface AppState {
   sessionId: string | null;
   sessionName: string | null;
   activePath: string | null;
+  /** Session the user asked to open whose `switch_session` response has not
+   *  arrived yet (the agent can take seconds to load a long transcript).
+   *  Drives the sidebar highlight and the transcript loading state. */
+  pendingSessionPath: string | null;
+  /** A prompt typed while a session switch was in flight; dispatched as soon
+   *  as the switch lands, or handed back to the composer if it fails. */
+  queuedPrompt: { text: string; images?: ImageContent[] } | null;
   messages: ChatEntry[];
   /** In-flight assistant turn rendered live from message_update partials. */
   streamingMsg: AssistantMessage | null;
@@ -174,6 +181,8 @@ const initialState: AppState = {
   sessionId: null,
   sessionName: null,
   activePath: null,
+  pendingSessionPath: null,
+  queuedPrompt: null,
   messages: [],
   streamingMsg: null,
   toolRuns: [],
@@ -242,6 +251,15 @@ let loadEpoch = 0;
 let compactBusy = false;
 /** One oversized-prompt offload at a time: covers accidental double submits. */
 let oversizeBusy = false;
+
+/**
+ * Optimistic switch bookkeeping: when a click flips the transcript straight
+ * from the session file, remember what was on screen before so a refused or
+ * failed agent switch can put it back. The first optimistic flip in a burst
+ * wins — later clicks target whatever is already displayed.
+ */
+let optimisticFrom: string | null = null;
+let optimisticMessages: ChatEntry[] | null = null;
 
 /**
  * Structural sharing between consecutive streaming frames. Frames re-send the
@@ -328,6 +346,8 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
    * dispose closes the socket and the reconnect loop spawns the replacement.
    * Two phases, because `agentReady` stays stale-true during the drop — it is
    * only reset once the fresh socket reports "connected".
+   * With the bridge's warm agent pool the socket never drops (the cwd swap
+   * adopts an idle child) — nothing to wait for, resolves on first tick.
    */
   const waitAgentRestart = (timeoutMs = 20_000) =>
     new Promise<void>((resolve, reject) => {
@@ -342,6 +362,10 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
           }
         } else if (connStatus !== "connected" || !agentReady) {
           dropped = true;
+        } else {
+          // Warm swap: the agent stayed up across the cwd change.
+          resolve();
+          return;
         }
         if (Date.now() > deadline) {
           reject(new Error("agent restart timed out"));
@@ -410,11 +434,18 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     }
   };
 
-  const initSession = async () => {
+  const initSession = async (options?: { skipTranscript?: boolean }) => {
     const epoch = ++loadEpoch;
     try {
       const stateResp = await client.request<RpcSessionState>({ type: "get_state" });
       if (stateResp.success && stateResp.data) applyAgentState(stateResp.data);
+      // The optimistic switch path has already rendered this transcript from
+      // the session file — only the agent-side state sync is left to do.
+      if (options?.skipTranscript) {
+        void client.request({ type: "get_session_stats" });
+        void client.request({ type: "get_available_models" });
+        return;
+      }
       const entries = await loadAllMessages();
       if (loadEpoch !== epoch) return;
       set((state) => ({
@@ -433,12 +464,41 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     }
   };
 
+  /** Fire a prompt queued while a session switch was in flight. */
+  const flushQueuedPrompt = () => {
+    const queued = get().queuedPrompt;
+    if (!queued) return;
+    set({ queuedPrompt: null });
+    get().actions.sendPrompt(queued.text, queued.images);
+  };
+
+  /** Put back the transcript an optimistic switch displaced (agent refused
+   *  the switch or it failed) — no refetch needed, the old messages were
+   *  stashed when the display flipped. Any prompt queued during the switch
+   *  returns to the composer instead of auto-firing into the restored
+   *  session, since it was written with the other one on screen. */
+  const revertOptimisticSwitch = () => {
+    const queued = get().queuedPrompt;
+    if (queued) {
+      set({ queuedPrompt: null });
+      setComposerText(queued.text);
+      addNotice("info", storeT("notice.queuedPromptBack"));
+    }
+    if (optimisticFrom === null) return;
+    set({ activePath: optimisticFrom, messages: optimisticMessages ?? [] });
+    optimisticFrom = null;
+    optimisticMessages = null;
+  };
+
   const applyAgentState = (data: RpcSessionState) => {
     set((state) => ({
       agentState: data,
       sessionId: data.sessionId ?? state.sessionId,
       sessionName: data.sessionName ?? state.sessionName,
-      activePath: data.sessionFile ?? state.activePath,
+      // While a switch is in flight the agent lags the UI (it may still be
+      // on the previous session, or booting into the target) — hold the
+      // displayed identity until the switch's own get_state lands.
+      activePath: state.pendingSessionPath ?? (data.sessionFile ?? state.activePath),
       stopping: data.isStreaming ? state.stopping : false,
       ...(data.todoPhases !== undefined ? { todos: normalizeTodoPhases(data.todoPhases) } : null),
     }));
@@ -450,9 +510,14 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     switch (frame.type) {
       case "ready":
         set({ agentReady: true });
-        void initSession();
         refreshSessions();
         refreshProjects();
+        // A switch is in flight: its own completion path re-initializes the
+        // session. Running a full initSession here would race it and clobber
+        // the optimistically displayed transcript with the agent's lagging
+        // view (it may still be booting into the target session).
+        if (get().pendingSessionPath !== null) break;
+        void initSession();
         break;
 
       case "agent_end": {
@@ -679,21 +744,15 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
         break;
       }
       case "new_session":
-      case "switch_session":
-        // success with `cancelled: true` means the agent refused the change
-        // (session_before_switch hook, cwd guard) and kept the current
-        // session — wiping the transcript here would blank the UI for a
-        // switch that never happened.
-        if ((resp.data as { cancelled?: boolean } | undefined)?.cancelled === true) {
-          addNotice(
-            "warning",
-            storeT(resp.command === "new_session" ? "notice.newSessionCancelled" : "notice.switchCancelled"),
-          );
-          break;
-        }
+      case "switch_session": {
+        // An optimistic transcript load may have already flipped the display
+        // to the target session (read straight from the session file while
+        // the agent was still switching). Keep it on success; on a refusal
+        // (session_before_switch hook, cwd guard) or error, put the previous
+        // transcript back — the agent never left it.
+        const optimisticShown = optimisticFrom !== null && get().activePath !== optimisticFrom;
         if (resp.success) {
           set({
-            messages: [],
             streamingMsg: null,
             toolRuns: [],
             stats: null,
@@ -709,10 +768,25 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
             // session's title in the top bar.
             sessionId: null,
             sessionName: null,
+            ...(optimisticShown ? {} : { messages: [] }),
           });
-          void initSession();
+          optimisticFrom = null;
+          optimisticMessages = null;
+          // The agent is on the new session — fire anything the user typed
+          // while the switch was in flight.
+          void initSession(optimisticShown ? { skipTranscript: true } : undefined).then(flushQueuedPrompt);
+        } else {
+          revertOptimisticSwitch();
+        }
+        set({ pendingSessionPath: null });
+        if ((resp.data as { cancelled?: boolean } | undefined)?.cancelled === true) {
+          addNotice(
+            "warning",
+            storeT(resp.command === "new_session" ? "notice.newSessionCancelled" : "notice.switchCancelled"),
+          );
         }
         break;
+      }
       case "set_model":
         if (resp.success) {
           void client.request({ type: "get_state" });
@@ -799,6 +873,15 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
       const trimmed = text.trim();
       if (!trimmed && (!images || images.length === 0)) return;
       const state = get();
+      // A session switch is still in flight: the agent may not be on the
+      // displayed session yet, so a prompt now would land in the wrong one.
+      if (state.pendingSessionPath !== null) {
+        // Queue instead of bouncing: the prompt dispatches automatically the
+        // moment the switch lands (or returns to the composer if it fails).
+        set({ queuedPrompt: { text: trimmed, images } });
+        addNotice("info", storeT("notice.promptQueued"));
+        return;
+      }
       // Fast double-Enter / double-click: an identical prompt still pending
       // is a duplicate, not a queued follow-up.
       if (isDuplicatePendingMessage(state.messages, trimmed, images?.length ?? 0)) {
@@ -861,14 +944,80 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
     },
 
     openSession(path: string) {
+      // Already there — nothing to switch, no RPC (omp hangs on same-session
+      // switches anyway).
+      if (path === get().activePath && get().pendingSessionPath === null) return;
       // The agent only switches into sessions recorded under its own working
       // directory — anything else it cancels silently (success:true, no
       // switch). Sessions from another project need the connection moved to
       // that project first, and the replacement agent up, before switching.
       const targetCwd = get().sessions.find((session) => session.path === path)?.cwd ?? null;
       const currentCwd = get().projectCwd;
+      // Flag the target up front: the agent can take seconds to load a long
+      // transcript, and without the flag the UI keeps showing the old session
+      // with zero feedback until the switch_session response lands.
+      set({ pendingSessionPath: path });
+      // Optimistic transcript: read the .jsonl straight from the bridge (the
+      // same records the agent's get_messages serves — the TUI's resume works
+      // the same way) and render the conversation immediately. The agent
+      // switch still runs below; prompting needs it, displaying doesn't.
+      if (path !== get().activePath) {
+        void apiFetch(`/api/sessions/transcript?path=${encodeURIComponent(path)}`)
+          .then(async (resp) => {
+            if (!resp.ok) throw new Error(`transcript ${resp.status}`);
+            const body = (await resp.json()) as { messages?: AgentMessage[] };
+            // A newer click superseded this load.
+            if (get().pendingSessionPath !== path) return;
+            const previous = get();
+            if (optimisticFrom === null) {
+              optimisticFrom = previous.activePath;
+              optimisticMessages = previous.messages;
+            }
+            // Invalidate any in-flight initSession from a previous switch —
+            // its late transcript must not overwrite this session's.
+            loadEpoch += 1;
+            set({
+              activePath: path,
+              messages: (body.messages ?? []).map(unwrapUiContract) as ChatEntry[],
+              streamingMsg: null,
+              toolRuns: [],
+              stats: null,
+              stopping: false,
+              awaitingAgent: false,
+              planMode: false,
+              planModeFromIndex: null,
+              goal: null,
+              todos: [],
+              handoffInFlight: false,
+              sessionId: null,
+              // Known title from the sessions list — get_state refines it
+              // once the agent has switched.
+              sessionName: previous.sessions.find((s) => s.path === path)?.title ?? null,
+            });
+          })
+          .catch(() => {
+            // Bridge read unavailable — the agent-driven path below still
+            // swaps the transcript when its switch_session lands.
+          });
+      }
       if (!targetCwd || !currentCwd || sameDirectory(targetCwd, currentCwd)) {
-        client.request({ type: "switch_session", sessionPath: path }).catch((err: unknown) => fail(err, "open session"));
+        // omp never answers a switch into the session it already has — race
+        // the RPC against a fallback that releases the UI (the transcript on
+        // screen is the file-fresh optimistic read; the agent's buffered
+        // copy processes whatever comes next whenever it unblocks).
+        client
+          .request({ type: "switch_session", sessionPath: path })
+          .catch((err: unknown) => {
+            revertOptimisticSwitch();
+            set({ pendingSessionPath: null });
+            fail(err, "open session");
+          });
+        setTimeout(() => {
+          if (get().pendingSessionPath === path) {
+            set({ pendingSessionPath: null });
+            flushQueuedPrompt();
+          }
+        }, 15_000);
         return;
       }
       void requestCwdSwitch(targetCwd)
@@ -881,7 +1030,11 @@ export const useAppStore = create<AppState & { actions: StoreActions }>()((set, 
           refreshProjects();
           refreshSessions();
         })
-        .catch((err: unknown) => fail(err, "open session"));
+        .catch((err: unknown) => {
+          revertOptimisticSwitch();
+          set({ pendingSessionPath: null });
+          fail(err, "open session");
+        });
     },
 
     renameSession(name: string) {
@@ -1142,4 +1295,9 @@ export function usageTotals(usage: Usage | undefined) {
     cost: usage.cost.total,
     reasoningTokens: usage.reasoningTokens,
   };
+}
+
+// TEMP-DEBUG: remove after todo-panel animation review.
+if (import.meta.env.DEV) {
+  (window as unknown as { __ompStore: unknown }).__ompStore = useAppStore;
 }

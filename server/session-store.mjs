@@ -71,3 +71,41 @@ export async function deleteSessionFile(sessionsDir, requestedPath) {
   await fsp.unlink(resolved);
   return { deleted: resolved };
 }
+
+/** Refuse transcripts beyond this size — a session file that large would be
+ *  unusable in the UI anyway and only serves as a DoS lever. */
+const MAX_TRANSCRIPT_BYTES = 128 * 1024 * 1024;
+
+/**
+ * Read a session's messages straight from its .jsonl file — the same records
+ * the agent's `get_messages` serves, without waiting on the agent. Lets the
+ * web UI render a conversation instantly while `switch_session` catches up
+ * in the background (the TUI equivalent: resume reads the session file).
+ */
+export async function readSessionTranscript(sessionsDir, requestedPath) {
+  const resolved = path.resolve(requestedPath);
+  const resolvedRoot = path.resolve(sessionsDir);
+  if (!resolved.startsWith(resolvedRoot + path.sep) || !resolved.endsWith(".jsonl")) {
+    throw Object.assign(new Error("path outside sessions directory"), { status: 400 });
+  }
+  const stat = await fsp.stat(resolved).catch(() => null);
+  if (!stat || !stat.isFile()) throw Object.assign(new Error("session file not found"), { status: 404 });
+  if (stat.size > MAX_TRANSCRIPT_BYTES) {
+    throw Object.assign(new Error("session transcript too large"), { status: 413 });
+  }
+  const content = await fsp.readFile(resolved, "utf8");
+  const messages = [];
+  for (const line of content.split("\n")) {
+    if (!line.startsWith("{")) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue; // truncated/partial trailing line — skip
+    }
+    if (entry?.type === "message" && entry.message && typeof entry.message.role === "string") {
+      messages.push(entry.message);
+    }
+  }
+  return messages;
+}
