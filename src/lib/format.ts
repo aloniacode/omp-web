@@ -37,7 +37,8 @@ export function relTime(
 ): string {
   const diff = Date.now() - ms;
   const l = labels ?? { justNow: "just now", minutesAgo: "{n}m ago", hoursAgo: "{h}h ago", daysAgo: "{d}d ago" };
-  const fill = (template: string, n: number) => template.replaceAll("{n}", String(n));
+  // Templates use per-unit placeholders ({n} minutes / {h} hours / {d} days).
+  const fill = (template: string, n: number) => template.replaceAll(/\{[nhd]\}/g, String(n));
   if (diff < 60_000) return l.justNow;
   const minutes = Math.floor(diff / 60_000);
   if (minutes < 60) return fill(l.minutesAgo, minutes);

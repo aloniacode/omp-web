@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmtCost, fmtPercent, fmtTokPerSec, fmtTokens, stderrTailSummary, toolArgsSummary, truncate, userText } from "../src/lib/format";
+import { fmtCost, fmtPercent, fmtTokPerSec, fmtTokens, relTime, stderrTailSummary, toolArgsSummary, truncate, userText } from "../src/lib/format";
 
 describe("fmtTokens", () => {
   it("formats small numbers raw", () => {
@@ -105,5 +105,29 @@ describe("stderrTailSummary", () => {
 
   it("returns empty for whitespace-only chunks", () => {
     expect(stderrTailSummary(["  ", "\n"])).toBe("");
+  });
+});
+describe("relTime", () => {
+  const now = Date.now();
+  const zh = {
+    justNow: "刚刚",
+    minutesAgo: "{n} 分钟前",
+    hoursAgo: "{h} 小时前",
+    daysAgo: "{d} 天前",
+  };
+  it("interpolates every unit placeholder, not just {n}", () => {
+    expect(relTime(now - 30_000, zh)).toBe("刚刚");
+    expect(relTime(now - 5 * 60_000, zh)).toBe("5 分钟前");
+    expect(relTime(now - 3 * 3_600_000, zh)).toBe("3 小时前");
+    expect(relTime(now - 2 * 86_400_000, zh)).toBe("2 天前");
+  });
+  it("defaults to english templates", () => {
+    expect(relTime(now - 90_000)).toBe("1m ago");
+    expect(relTime(now - 5 * 3_600_000)).toBe("5h ago");
+    expect(relTime(now - 6 * 86_400_000)).toBe("6d ago");
+  });
+  it("falls back to a date beyond a week", () => {
+    const old = new Date(2026, 0, 15, 12, 0).getTime();
+    expect(relTime(old, zh)).toBe(new Date(old).toLocaleDateString());
   });
 });
