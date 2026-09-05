@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Bot as IconBot,
@@ -295,7 +295,7 @@ export interface ChatEntryUser {
   failed?: boolean;
 }
 
-export function UserRow({ entry }: { entry: ChatEntryUser }) {
+export const UserRow = memo(function UserRow({ entry }: { entry: ChatEntryUser }) {
   const { t } = useI18n();
   const actions = useActions();
   return (
@@ -325,7 +325,7 @@ export function UserRow({ entry }: { entry: ChatEntryUser }) {
       </div>
     </div>
   );
-}
+});
 
 /** Live assistant turn; renders every block as it streams in. */
 export function MessageView({
@@ -385,9 +385,11 @@ function fmtDuration(ms: number): string {
 /**
  * One fold per finished turn: the entire execution flow (thinking, tool
  * calls, intermediate texts) collapses into a single summary row — only the
- * final conclusion stays visible below it.
+ * final conclusion stays visible below it. Memoized: turn objects are
+ * referentially stable while the session's messages are unchanged, so
+ * unrelated store-driven re-renders of ChatList skip every row.
  */
-export function TurnRow({
+export const TurnRow = memo(function TurnRow({
   user,
   assistants,
   resultsByCallId,
@@ -479,4 +481,4 @@ export function TurnRow({
       )}
     </>
   );
-}
+});

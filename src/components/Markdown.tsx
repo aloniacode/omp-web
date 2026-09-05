@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -55,7 +55,10 @@ function CodeBlock({ children }: { children: ReactNode }) {
   );
 }
 
-export function Markdown({ text }: { text: string }) {
+/** Memoized by text: session reloads rebuild every message object but the
+ *  markdown strings compare equal by value, so revisiting a session skips
+ *  the (synchronous) react-markdown parse for every previously seen block. */
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="md">
       <ReactMarkdown
@@ -68,4 +71,4 @@ export function Markdown({ text }: { text: string }) {
       </ReactMarkdown>
     </div>
   );
-}
+});
